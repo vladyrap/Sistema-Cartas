@@ -5,9 +5,9 @@ import Layout from '../components/Layout';
 import RankBadge from '../components/RankBadge';
 import { api } from '../lib/api';
 import { auth } from '../lib/auth';
-import { BENEFITS_BY_LEVEL, RANK_BANDS, RANK_COLORS, rankFromLevel } from '../lib/progression';
+import { BENEFITS_BY_LEVEL, MAX_LEVEL, RANK_BANDS, RANK_COLORS, rankFromLevel } from '../lib/progression';
 
-const LEVELS = Array.from({ length: 30 }, (_, i) => i + 1);
+const LEVELS = Array.from({ length: MAX_LEVEL }, (_, i) => i + 1);
 
 export default function RutaDelCampeon() {
   const [progress, setProgress] = useState(null);
@@ -34,7 +34,7 @@ export default function RutaDelCampeon() {
             </span>
           </h1>
           <p className="text-white/50 mt-3 max-w-xl mx-auto text-sm">
-            30 niveles. 7 rangos. Beneficios reales que se ganan cada temporada.
+            {MAX_LEVEL} niveles. 7 rangos. Beneficios reales que se ganan cada temporada.
             {progress && ` Vas en nivel ${currentLevel}.`}
           </p>
         </header>
@@ -46,47 +46,62 @@ export default function RutaDelCampeon() {
           ))}
         </div>
 
-        {/* Camino de niveles */}
-        <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-10 gap-2 mb-12">
-          {LEVELS.map((lv) => {
-            const rank = rankFromLevel(lv);
-            const colors = RANK_COLORS[rank];
-            const isCurrent = lv === currentLevel;
-            const isUnlocked = lv <= currentLevel;
-            const hasBenefit = BENEFITS_BY_LEVEL[lv];
-
+        {/* Camino de niveles agrupado por rango (7 secciones) */}
+        <div className="space-y-4 mb-12">
+          {RANK_BANDS.map(([lo, hi, rankName]) => {
+            const colors = RANK_COLORS[rankName];
+            const rankLevels = LEVELS.filter((lv) => lv >= lo && lv <= hi);
             return (
-              <motion.div
-                key={lv}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3, delay: lv * 0.015 }}
-                className={`relative aspect-square rounded-xl flex flex-col items-center justify-center border-2 ${
-                  isCurrent
-                    ? `${colors.border} bg-gradient-to-br from-${colors.text.replace('text-', '')}/20 to-transparent shadow-glow-violet`
-                    : isUnlocked
-                    ? `${colors.border} ${colors.bg}`
-                    : 'border-white/5 bg-bg-surface/40'
-                }`}
-                style={isCurrent ? { borderColor: colors.text.replace('text-rank-', '#') } : {}}
-              >
-                {isCurrent && (
-                  <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-elite-violet flex items-center justify-center">
-                    <span className="text-[8px] font-bold text-white">★</span>
-                  </div>
-                )}
-                <span className={`font-mono text-xs ${isUnlocked ? colors.text : 'text-white/30'}`}>N{lv}</span>
-                {hasBenefit && (
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
-                    {isUnlocked ? (
-                      <Check size={10} className="text-elite-blue bg-bg rounded-full p-0.5" />
-                    ) : (
-                      <Lock size={10} className="text-white/30 bg-bg rounded-full p-0.5" />
-                    )}
-                  </div>
-                )}
-                {lv === 30 && <Crown size={12} className={`absolute -top-1 left-1/2 -translate-x-1/2 ${isUnlocked ? 'text-elite-gold' : 'text-white/20'}`} />}
-              </motion.div>
+              <div key={rankName}>
+                <div className="flex items-center gap-2 mb-2">
+                  <RankBadge rank={rankName} size="sm" />
+                  <span className="text-[10px] text-white/30 font-mono">N{lo}–N{hi}</span>
+                  <div className={`flex-grow h-px ${colors.border} border-b`} />
+                </div>
+                <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-15 gap-1.5">
+                  {rankLevels.map((lv) => {
+                    const isCurrent = lv === currentLevel;
+                    const isUnlocked = lv <= currentLevel;
+                    const hasBenefit = BENEFITS_BY_LEVEL[lv];
+                    const isMaxLevel = lv === MAX_LEVEL;
+
+                    return (
+                      <motion.div
+                        key={lv}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.2, delay: Math.min(lv * 0.003, 0.5) }}
+                        className={`relative aspect-square rounded-md flex items-center justify-center border ${
+                          isCurrent
+                            ? `${colors.border} ${colors.bg} ring-1 ring-elite-violet/60 shadow-glow-violet`
+                            : isUnlocked
+                            ? `${colors.border} ${colors.bg}`
+                            : 'border-white/5 bg-bg-surface/40'
+                        }`}
+                      >
+                        {isCurrent && (
+                          <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-elite-violet flex items-center justify-center">
+                            <span className="text-[7px] font-bold text-white">★</span>
+                          </div>
+                        )}
+                        <span className={`font-mono text-[10px] ${isUnlocked ? colors.text : 'text-white/30'}`}>{lv}</span>
+                        {hasBenefit && (
+                          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
+                            {isUnlocked ? (
+                              <Check size={8} className="text-elite-blue bg-bg rounded-full p-0.5" />
+                            ) : (
+                              <Lock size={8} className="text-white/30 bg-bg rounded-full p-0.5" />
+                            )}
+                          </div>
+                        )}
+                        {isMaxLevel && (
+                          <Crown size={10} className={`absolute -top-1 left-1/2 -translate-x-1/2 ${isUnlocked ? 'text-elite-gold' : 'text-white/20'}`} />
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </div>

@@ -40,6 +40,9 @@ export default {
         'glow-violet': '0 0 30px rgb(var(--elite-violet) / 0.35)',
         'glow-gold':   '0 0 30px rgb(var(--elite-gold) / 0.45)',
       },
+      gridTemplateColumns: {
+        '15': 'repeat(15, minmax(0, 1fr))',
+      },
     },
   },
   plugins: [],
