@@ -120,6 +120,18 @@ def award_exp(
     )
     db.add(tx)
     db.flush()
+
+    # Achievements acumulativas por exp_total (solo si es positivo)
+    if amount > 0 and season.guild_id is not None:
+        try:
+            from app.services import achievements_auto
+            achievements_auto.increment_for_trigger(
+                db, player_id=player_id, guild_id=season.guild_id,
+                kind="exp_total", delta=amount,
+            )
+        except Exception:
+            pass
+
     return tx
 
 

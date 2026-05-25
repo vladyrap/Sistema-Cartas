@@ -127,6 +127,74 @@ def cancel_registration(
 # ============================== Admin actions ==============================
 
 
+REFERRAL_REFERRER_BONUS = 300
+REFERRAL_REFERRED_BONUS = 150
+
+
+def _activate_referral_on_first_attendance(db: Session, *, player_profile_id: int) -> None:
+    """Si el jugador fue invitado y aún está PENDING, activamos el referral.
+
+    Bonus EXP a ambos: el invitado y el invitador (si tienen perfil).
+    Idempotente: solo se activa una vez por referral.
+    """
+    from app.models import PlayerProfile, Referral, ReferralStatus
+    from app.services import exp as exp_svc
+
+    player = db.get(PlayerProfile, player_profile_id)
+    if not player:
+        return
+
+    ref = db.scalar(
+        select(Referral).where(
+            Referral.referred_user_id == player.user_id,
+            Referral.status == ReferralStatus.PENDING,
+        )
+    )
+    if not ref:
+        return
+
+    # Otorga EXP al recién llegado y al invitador (si tiene perfil)
+    referrer_profile = db.scalar(
+        select(PlayerProfile).where(PlayerProfile.user_id == ref.referrer_user_id)
+    )
+
+    from datetime import datetime, timezone
+    ref.status = ReferralStatus.ACTIVATED
+    ref.activated_at = datetime.now(timezone.utc)
+
+    # Bonus al invitado y al invitador (best-effort: si no hay temporada activa,
+    # el award_exp lanza RuntimeError y lo ignoramos en el caller).
+    try:
+        exp_svc.award_exp(
+            db, player.id, "referral",
+            amount=REFERRAL_REFERRED_BONUS,
+            reason=f"Bonus por venir referido",
+        )
+    except RuntimeError:
+        pass
+    if referrer_profile:
+        try:
+            exp_svc.award_exp(
+                db, referrer_profile.id, "referral",
+                amount=REFERRAL_REFERRER_BONUS,
+                reason=f"Bonus por traer a {player.alias}",
+            )
+        except RuntimeError:
+            pass
+        # Notif al invitador
+        try:
+            from app.services import notifications as notif_svc
+            notif_svc.notify(
+                db, player_id=referrer_profile.id,
+                type="referral_activated",
+                title="🎉 Tu referido se activó",
+                body=f"{player.alias} jugó su primer evento. ¡Bonus de EXP para vos!",
+                link="/profile",
+            )
+        except Exception:
+            pass
+
+
 def mark_attendance(
     db: Session, *, registration_id: int, status_value: AttendanceStatus
 ) -> EventRegistration:
@@ -137,13 +205,30 @@ def mark_attendance(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Inscripción no encontrada")
     previous = reg.attendance_status
     reg.attendance_status = status_value
-    # Trigger streak increment al cambiar a ATTENDED (no si ya estaba).
+    # Trigger streak + achievements al cambiar a ATTENDED (no si ya estaba).
     if status_value == AttendanceStatus.ATTENDED and previous != AttendanceStatus.ATTENDED:
         ev = db.get(Event, reg.event_id)
         if ev and ev.guild_id is not None:
-            streak_svc.register_attendance(
+            s, _ = streak_svc.register_attendance(
                 db, player_id=reg.player_id, guild_id=ev.guild_id,
             )
+            try:
+                from app.services import achievements_auto
+                achievements_auto.increment_for_trigger(
+                    db, player_id=reg.player_id, guild_id=ev.guild_id,
+                    kind="events_attended", delta=1,
+                )
+                achievements_auto.increment_for_trigger(
+                    db, player_id=reg.player_id, guild_id=ev.guild_id,
+                    kind="streak_max", delta=s.current_streak,
+                )
+            except Exception:
+                pass
+            # Activar referral si el jugador fue invitado y aún está PENDING.
+            try:
+                _activate_referral_on_first_attendance(db, player_profile_id=reg.player_id)
+            except Exception:
+                pass
     db.flush()
     return reg
 

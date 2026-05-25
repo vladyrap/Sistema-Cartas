@@ -57,6 +57,21 @@ def register(request: Request, payload: RegisterRequest, db: DbDep) -> TokenResp
     db.add(profile)
     db.flush()
 
+    # Procesar referido si vino con referral_code
+    if payload.referral_code:
+        from app.models import Referral, ReferralStatus
+        ref_code = payload.referral_code.strip().upper()
+        referrer_profile = db.scalar(
+            select(PlayerProfile).where(PlayerProfile.elite_id_code == ref_code)
+        )
+        if referrer_profile and referrer_profile.user_id != user.id:
+            db.add(Referral(
+                referrer_user_id=referrer_profile.user_id,
+                referred_user_id=user.id,
+                status=ReferralStatus.PENDING,
+            ))
+            db.flush()
+
     # Generar token de verificación y mandarlo. No bloqueamos el registro si el
     # email falla — el usuario puede pedir reenvío después.
     plain_token = token_svc.issue(db, user_id=user.id, kind=AuthTokenKind.EMAIL_VERIFY)

@@ -40,6 +40,7 @@ class RegisterRequest(BaseModel):
     full_name: str | None = None
     player_class: PlayerClass = PlayerClass.DUELISTA
     favorite_game_id: int | None = None
+    referral_code: str | None = Field(default=None, description="Elite ID code del jugador que te invitó")
 
 
 class TokenResponse(BaseModel):

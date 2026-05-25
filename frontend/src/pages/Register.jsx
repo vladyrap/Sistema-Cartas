@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, UserPlus } from 'lucide-react';
 import Layout from '../components/Layout';
 import { auth } from '../lib/auth';
 import { api } from '../lib/api';
@@ -16,7 +16,13 @@ const CLASSES = [
 ];
 
 export default function Register() {
-  const [form, setForm] = useState({ email: '', password: '', alias: '', full_name: '', player_class: 'DUELISTA', favorite_game_id: null });
+  const [params] = useSearchParams();
+  const initialRef = params.get('ref') || '';
+  const [form, setForm] = useState({
+    email: '', password: '', alias: '', full_name: '',
+    player_class: 'DUELISTA', favorite_game_id: null,
+    referral_code: initialRef,
+  });
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -31,7 +37,11 @@ export default function Register() {
     e.preventDefault();
     setLoading(true);
     try {
-      await auth.register({ ...form, favorite_game_id: form.favorite_game_id ? Number(form.favorite_game_id) : null });
+      await auth.register({
+        ...form,
+        favorite_game_id: form.favorite_game_id ? Number(form.favorite_game_id) : null,
+        referral_code: form.referral_code?.trim() || null,
+      });
       toast.success('¡Elite ID activada! Bienvenido.');
       navigate('/dashboard');
     } catch (err) {
@@ -105,6 +115,21 @@ export default function Register() {
                 </select>
               </div>
             )}
+
+            <div>
+              <label className="block text-xs text-white/60 mb-1.5 flex items-center gap-1">
+                <UserPlus size={11} /> Código de invitación (opcional)
+              </label>
+              <input
+                type="text" value={form.referral_code}
+                onChange={(e) => setForm({ ...form, referral_code: e.target.value.toUpperCase() })}
+                placeholder="EC-2026-000005"
+                className="w-full px-3 py-2.5 rounded-lg bg-bg-elevated border border-bg-border font-mono text-sm placeholder:text-white/30 focus:outline-none focus:border-elite-violet/60"
+              />
+              <p className="text-[10px] text-white/40 mt-1">
+                Si un amigo te invitó, pega su Elite ID acá. Ambos reciben EXP bonus al jugar tu primer evento.
+              </p>
+            </div>
 
             <button type="submit" disabled={loading}
               className="w-full py-3 rounded-lg bg-gradient-to-r from-elite-violet to-elite-blue text-white font-semibold hover:shadow-glow-violet transition disabled:opacity-50">

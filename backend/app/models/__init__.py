@@ -31,7 +31,7 @@ from app.models.event_registration import EventRegistration
 from app.models.match_result import MatchResult
 from app.models.exp_transaction import ExpTransaction
 from app.models.prestige_transaction import PrestigeTransaction
-from app.models.achievement import Achievement, PlayerAchievement
+from app.models.achievement import Achievement, PlayerAchievement, PlayerAchievementProgress
 from app.models.title import Title, PlayerTitle
 from app.models.mission import Mission, PlayerMission
 from app.models.product import Product
@@ -42,6 +42,7 @@ from app.models.notification import Notification
 from app.models.player_streak import PlayerStreak
 from app.models.announcement import Announcement
 from app.models.wishlist import ProductWishlist
+from app.models.referral import Referral, ReferralStatus
 
 __all__ = [
     "Base",
@@ -88,4 +89,7 @@ __all__ = [
     "PlayerStreak",
     "Announcement",
     "ProductWishlist",
+    "PlayerAchievementProgress",
+    "Referral",
+    "ReferralStatus",
 ]
