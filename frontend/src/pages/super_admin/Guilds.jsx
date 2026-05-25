@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Plus, Edit3, Archive, Users, Shield, Crown } from 'lucide-react';
 import Layout from '../../components/Layout';
 import AdminFormModal, { Field, Input, Textarea, Toggle, Select } from '../../components/AdminFormModal';
+import ImageUpload from '../../components/ImageUpload';
 import { useAuth } from '../../lib/useAuth';
 import { useGuild } from '../../lib/useGuild';
 import { api } from '../../lib/api';
@@ -208,11 +209,21 @@ export default function SuperAdminGuilds() {
           <Field label="Descripción">
             <Textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </Field>
-          <Field label="Logo URL">
-            <Input value={form.logo_url} onChange={(e) => setForm({ ...form, logo_url: e.target.value })} placeholder="https://…" />
+          <Field label="Logo" hint="Cuadrado, 256×256 recomendado.">
+            <ImageUpload
+              value={form.logo_url}
+              onChange={(url) => setForm({ ...form, logo_url: url })}
+              category="guild_logos"
+              aspect="square"
+            />
           </Field>
-          <Field label="Banner URL">
-            <Input value={form.banner_url} onChange={(e) => setForm({ ...form, banner_url: e.target.value })} placeholder="https://…" />
+          <Field label="Banner" hint="Ancho, 1600×400 recomendado.">
+            <ImageUpload
+              value={form.banner_url}
+              onChange={(url) => setForm({ ...form, banner_url: url })}
+              category="guild_banners"
+              aspect="wide"
+            />
           </Field>
           <Field label="Accent color (HEX)" hint="Se usa como acento en el navbar del Gremio.">
             <Input value={form.accent_color} onChange={(e) => setForm({ ...form, accent_color: e.target.value })} placeholder="#8b5cf6" />

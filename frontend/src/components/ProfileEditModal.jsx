@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { Camera, Upload, X, Save } from 'lucide-react';
+import { X, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
+import ImageUpload from './ImageUpload';
 
 const CLASSES = ['DUELISTA', 'COLECCIONISTA', 'ESTRATEGA', 'MENTOR', 'TRADER', 'EXPLORADOR'];
 
@@ -14,27 +15,6 @@ export default function ProfileEditModal({ open, onClose, profile, onUpdated }) 
     player_class: profile?.player_class || 'DUELISTA',
   });
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef(null);
-
-  async function uploadFile(file) {
-    if (!file) return;
-    const fd = new FormData();
-    fd.append('file', file);
-    setUploading(true);
-    try {
-      const { data } = await api.post('/players/me/avatar', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setForm((f) => ({ ...f, avatar_url: data.avatar_url || '' }));
-      toast.success('Foto subida');
-      onUpdated?.(data);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'No se pudo subir');
-    } finally {
-      setUploading(false);
-    }
-  }
 
   async function submit(e) {
     e.preventDefault();
@@ -80,32 +60,14 @@ export default function ProfileEditModal({ open, onClose, profile, onUpdated }) 
 
             <div className="p-5 space-y-4 overflow-y-auto">
               {/* Avatar */}
-              <div className="flex items-center gap-4">
-                <div className="w-20 h-20 rounded-full bg-bg-elevated border border-bg-border overflow-hidden flex items-center justify-center flex-shrink-0">
-                  {form.avatar_url ? (
-                    <img src={form.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <Camera size={24} className="text-white/30" />
-                  )}
-                </div>
-                <div className="flex-grow">
-                  <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-xs transition disabled:opacity-50">
-                    <Upload size={12} /> {uploading ? 'Subiendo…' : 'Subir foto'}
-                  </button>
-                  <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif"
-                    className="hidden"
-                    onChange={(e) => uploadFile(e.target.files?.[0])} />
-                  <p className="text-[10px] text-white/40 mt-1.5">JPG / PNG / WEBP · máx 3MB</p>
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs text-white/60 mb-1.5">O pega una URL de imagen</label>
-                <input value={form.avatar_url}
-                  onChange={(e) => setForm({ ...form, avatar_url: e.target.value })}
-                  placeholder="https://… o /uploads/avatars/…"
-                  className="w-full px-3 py-2 rounded-lg bg-bg-elevated border border-bg-border text-sm placeholder:text-white/30 focus:outline-none focus:border-elite-violet/60" />
+                <label className="block text-xs text-white/60 mb-1.5">Foto de perfil</label>
+                <ImageUpload
+                  value={form.avatar_url}
+                  onChange={(url) => setForm({ ...form, avatar_url: url })}
+                  category="avatars"
+                  aspect="square"
+                />
               </div>
 
               <div>

@@ -3,6 +3,7 @@ import { Navigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Crown, Save, Shield, ExternalLink } from 'lucide-react';
 import Layout from '../components/Layout';
+import ImageUpload from '../components/ImageUpload';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/useAuth';
 import { useGuild } from '../lib/useGuild';
@@ -121,18 +122,20 @@ export default function GuildAdminSettings() {
           <section className="p-5 rounded-2xl bg-bg-surface border border-bg-border">
             <h2 className="font-display font-semibold mb-4">Branding</h2>
             <div className="space-y-3">
-              <Field label="Logo URL" hint="Cuadrado, ideal 256×256, se ve en navbar + tarjetas">
-                <input
-                  type="url" value={form.logo_url}
-                  onChange={(e) => change('logo_url', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-bg-elevated border border-bg-border text-sm focus:outline-none focus:border-elite-violet/60"
+              <Field label="Logo" hint="Cuadrado, ideal 256×256. Se ve en navbar + tarjetas.">
+                <ImageUpload
+                  value={form.logo_url}
+                  onChange={(url) => change('logo_url', url)}
+                  category="guild_logos"
+                  aspect="square"
                 />
               </Field>
-              <Field label="Banner URL" hint="Banner ancho, ideal 1600×400, se ve en la landing del Gremio">
-                <input
-                  type="url" value={form.banner_url}
-                  onChange={(e) => change('banner_url', e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-bg-elevated border border-bg-border text-sm focus:outline-none focus:border-elite-violet/60"
+              <Field label="Banner" hint="Ancho, ideal 1600×400. Se ve en la landing del Gremio.">
+                <ImageUpload
+                  value={form.banner_url}
+                  onChange={(url) => change('banner_url', url)}
+                  category="guild_banners"
+                  aspect="wide"
                 />
               </Field>
               <Field label="Accent color" hint="HEX, ej. #8b5cf6">
