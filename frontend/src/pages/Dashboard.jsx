@@ -8,6 +8,7 @@ import RankBadge from '../components/RankBadge';
 import ExpBar from '../components/ExpBar';
 import ProfileEditModal from '../components/ProfileEditModal';
 import StreakWidget from '../components/StreakWidget';
+import PollWidget from '../components/PollWidget';
 import { api } from '../lib/api';
 import { auth } from '../lib/auth';
 import { useLevelUp } from '../lib/useLevelUp';
@@ -116,6 +117,7 @@ export default function Dashboard() {
             </motion.div>
 
             <StreakWidget />
+            <PollWidget />
 
             <motion.div
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1 }}

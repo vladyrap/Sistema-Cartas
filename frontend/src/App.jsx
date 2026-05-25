@@ -37,6 +37,7 @@ import AdminAchievements from './pages/admin/Achievements';
 import AdminJoinRequests from './pages/admin/JoinRequests';
 import AdminCheckin from './pages/admin/Checkin';
 import AdminAnnouncements from './pages/admin/Announcements';
+import AdminPolls from './pages/admin/Polls';
 import SuperAdminGuilds from './pages/super_admin/Guilds';
 
 export default function App() {
@@ -80,6 +81,7 @@ export default function App() {
       <Route path="/admin/join-requests" element={<AdminJoinRequests />} />
       <Route path="/admin/checkin" element={<AdminCheckin />} />
       <Route path="/admin/announcements" element={<AdminAnnouncements />} />
+      <Route path="/admin/polls" element={<AdminPolls />} />
       <Route path="/super-admin/guilds" element={<SuperAdminGuilds />} />
     </Routes>
   );

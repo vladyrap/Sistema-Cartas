@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate, NavLink } from 'react-router-dom';
-import { Shield, Calendar, Users, Trophy, Package, Award, Sparkles, ShoppingBag, Zap, Gamepad2, UserPlus, Crown, Settings, Activity, ScanLine, Megaphone } from 'lucide-react';
+import { Shield, Calendar, Users, Trophy, Package, Award, Sparkles, ShoppingBag, Zap, Gamepad2, UserPlus, Crown, Settings, Activity, ScanLine, Megaphone, Vote } from 'lucide-react';
 import Layout from './Layout';
 import { useAuth } from '../lib/useAuth';
 import { useGuild } from '../lib/useGuild';
@@ -12,6 +12,7 @@ const SECTIONS = [
   { to: '/admin/events-list', icon: Calendar, label: 'Eventos' },
   { to: '/admin/checkin', icon: ScanLine, label: 'Check-in QR' },
   { to: '/admin/announcements', icon: Megaphone, label: 'Anuncios' },
+  { to: '/admin/polls', icon: Vote, label: 'Encuestas' },
   { to: '/admin/products', icon: Package, label: 'Productos' },
   { to: '/admin/reservations', icon: ShoppingBag, label: 'Reservas' },
   { to: '/admin/players', icon: Users, label: 'Jugadores', globalOnly: true },

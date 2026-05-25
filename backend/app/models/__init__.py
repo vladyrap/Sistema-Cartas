@@ -43,6 +43,8 @@ from app.models.player_streak import PlayerStreak
 from app.models.announcement import Announcement
 from app.models.wishlist import ProductWishlist
 from app.models.referral import Referral, ReferralStatus
+from app.models.deck import PlayerDeck
+from app.models.poll import Poll, PollOption, PollVote
 
 __all__ = [
     "Base",
@@ -92,4 +94,8 @@ __all__ = [
     "PlayerAchievementProgress",
     "Referral",
     "ReferralStatus",
+    "PlayerDeck",
+    "Poll",
+    "PollOption",
+    "PollVote",
 ]
