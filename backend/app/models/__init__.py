@@ -39,6 +39,7 @@ from app.models.reservation import Reservation
 from app.models.hall_of_fame import HallOfFameEntry
 from app.models.admin_action_log import AdminActionLog
 from app.models.notification import Notification
+from app.models.player_streak import PlayerStreak
 
 __all__ = [
     "Base",
@@ -82,4 +83,5 @@ __all__ = [
     "Notification",
     "AuthToken",
     "AuthTokenKind",
+    "PlayerStreak",
 ]

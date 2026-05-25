@@ -511,17 +511,23 @@ def remove_member(guild_id: int, user_id: int, db: DbDep, current: UserDep):
 def list_guild_activity(
     guild_id: int, db: DbDep, current: UserDep,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[ActivityEntry]:
-    """Feed de auditoría del Gremio. Solo GUILD_ADMIN o SUPER_ADMIN."""
+    """Feed de auditoría del Gremio. Solo GUILD_ADMIN o SUPER_ADMIN.
+
+    Paginación simple via `limit` (1..200) y `offset` (0..). Cliente que quiera
+    infinite-scroll incrementa `offset` por `limit` en cada fetch.
+    """
     _require_guild_admin(db, current, guild_id)
     limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     rows = db.execute(
         select(AdminActionLog, User, PlayerProfile)
         .join(User, AdminActionLog.admin_id == User.id)
         .outerjoin(PlayerProfile, PlayerProfile.user_id == User.id)
         .where(AdminActionLog.guild_id == guild_id)
         .order_by(AdminActionLog.id.desc())
-        .limit(limit)
+        .limit(limit).offset(offset)
     ).all()
     return [
         ActivityEntry(

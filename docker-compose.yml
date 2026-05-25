@@ -1,0 +1,80 @@
+# EliteCards — stack completo en local con un solo comando.
+#
+# Uso:
+#   docker compose up --build       # primera vez o tras cambios de Dockerfile
+#   docker compose up               # subsiguientes
+#   docker compose down             # detener (volúmenes se conservan)
+#   docker compose down -v          # detener + borrar volúmenes (BD limpia)
+#
+# Levantar solo Postgres + Redis (para dev local del backend con .venv):
+#   docker compose up db redis
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: elitecards
+      POSTGRES_PASSWORD: elitecards
+      POSTGRES_DB: elitecards
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "elitecards"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://elitecards:elitecards@db:5432/elitecards
+      REDIS_URL: redis://redis:6379/0
+      # En prod cambiar por algo seguro:
+      JWT_SECRET: dev-secret-please-change-for-prod-with-32-plus-chars
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TTL_MIN: "15"
+      JWT_REFRESH_TTL_DAYS: "7"
+      ENV: dev
+      ALLOWED_ORIGINS: http://localhost,http://localhost:5173
+      EMAIL_BACKEND: console
+      FRONTEND_URL: http://localhost
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    # Bind-mount opcional para dev hot-reload — descomentar si quieres editar
+    # código sin re-buildear la imagen. Para prod, dejar comentado.
+    # volumes:
+    #   - ./backend:/app
+    # command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  pgdata:

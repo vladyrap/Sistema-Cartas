@@ -83,6 +83,7 @@ class UserMe(BaseModel):
     id: int
     email: EmailStr
     role: UserRole
+    email_verified_at: datetime | None = None
     profile: PlayerSummary | None = None
 
 
@@ -697,6 +698,35 @@ class GuildMemberOut(BaseModel):
 
 class MemberRoleUpdate(BaseModel):
     role: GuildRole
+
+
+class StreakOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    guild_id: int
+    current_streak: int
+    longest_streak: int
+    last_attended_at: datetime | None = None
+    exp_multiplier: float = 1.0
+    next_milestone: int | None = None
+
+
+class PageMeta(BaseModel):
+    page: int
+    page_size: int
+    total: int
+    pages: int
+
+
+class LeaderboardRow(BaseModel):
+    rank: int
+    player_id: int
+    player_alias: str
+    player_elite_id: str | None = None
+    level: int
+    rank_name: str
+    exp_total: int
+    exp_in_level: int
+    delta_24h: int = 0  # EXP ganada en las últimas 24h
 
 
 class ActivityEntry(BaseModel):

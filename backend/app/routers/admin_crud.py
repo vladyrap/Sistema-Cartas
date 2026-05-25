@@ -400,7 +400,20 @@ def _player_full(player: PlayerProfile, user: User, level: int | None, rank: str
 
 
 @router.get("/players-full", response_model=list[PlayerFullOut])
-def list_players_full(db: DbDep, admin: AdminDep) -> list[PlayerFullOut]:
+def list_players_full(
+    db: DbDep, admin: AdminDep,
+    limit: int = 500,
+    offset: int = 0,
+    q: str | None = None,
+) -> list[PlayerFullOut]:
+    """Directorio global de jugadores (admin only).
+
+    - `limit` 1..1000, default 500. Cap defensivo para evitar dumps accidentales.
+    - `q` filtra por alias/email/elite_id (case-insensitive substring).
+    """
+    limit = max(1, min(limit, 1000))
+    offset = max(0, offset)
+
     active = db.scalar(select(Season).where(Season.status == SeasonStatus.ACTIVE))
     levels: dict[int, tuple[int, str]] = {}
     if active:
@@ -410,11 +423,19 @@ def list_players_full(db: DbDep, admin: AdminDep) -> list[PlayerFullOut]:
         ).all():
             levels[pid] = (lv, rk.value if hasattr(rk, "value") else rk)
 
-    rows = db.execute(
+    stmt = (
         select(PlayerProfile, User)
         .join(User, PlayerProfile.user_id == User.id)
         .order_by(PlayerProfile.alias)
-    ).all()
+    )
+    if q:
+        like = f"%{q.strip().lower()}%"
+        stmt = stmt.where(
+            (PlayerProfile.alias.ilike(like))
+            | (User.email.ilike(like))
+            | (PlayerProfile.elite_id_code.ilike(like))
+        )
+    rows = db.execute(stmt.limit(limit).offset(offset)).all()
     out = []
     for player, user in rows:
         lv, rk = levels.get(player.id, (None, None))

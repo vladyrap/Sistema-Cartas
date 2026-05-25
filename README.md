@@ -49,7 +49,31 @@ elitecards/
     └── tailwind.config.js
 ```
 
-## Setup local
+## Setup local con Docker (recomendado)
+
+```bash
+docker compose up --build
+```
+
+Levanta Postgres + Redis + backend (FastAPI) + frontend (Nginx servidor del bundle Vite). Después:
+
+- Frontend: http://localhost
+- Backend API: http://localhost:8000 (también accesible vía proxy en http://localhost/api)
+- Swagger docs: http://localhost:8000/docs
+
+La primera vez tarda 2-3 min (build de imágenes). Las siguientes son instantáneas.
+
+Para limpiar volúmenes y empezar fresh:
+```bash
+docker compose down -v
+```
+
+Para solo levantar Postgres + Redis (y correr backend/frontend con tu `.venv`/`npm` local):
+```bash
+docker compose up db redis
+```
+
+## Setup local sin Docker
 
 ### Backend
 

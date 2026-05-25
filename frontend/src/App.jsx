@@ -2,10 +2,14 @@ import { Routes, Route } from 'react-router-dom';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import VerifyEmail from './pages/VerifyEmail';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import RutaDelCampeon from './pages/RutaDelCampeon';
 import Ranking from './pages/Ranking';
+import Leaderboard from './pages/Leaderboard';
 import Events from './pages/Events';
 import EventDetail from './pages/EventDetail';
 import Catalog from './pages/Catalog';
@@ -39,10 +43,14 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/profile" element={<Profile />} />
       <Route path="/ruta" element={<RutaDelCampeon />} />
       <Route path="/ranking" element={<Ranking />} />
+      <Route path="/leaderboard" element={<Leaderboard />} />
       <Route path="/events" element={<Events />} />
       <Route path="/events/:id" element={<EventDetail />} />
       <Route path="/catalog" element={<Catalog />} />

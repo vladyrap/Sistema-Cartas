@@ -130,10 +130,20 @@ def cancel_registration(
 def mark_attendance(
     db: Session, *, registration_id: int, status_value: AttendanceStatus
 ) -> EventRegistration:
+    from app.models import Event
+    from app.services import streak as streak_svc
     reg = db.get(EventRegistration, registration_id)
     if not reg:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Inscripción no encontrada")
+    previous = reg.attendance_status
     reg.attendance_status = status_value
+    # Trigger streak increment al cambiar a ATTENDED (no si ya estaba).
+    if status_value == AttendanceStatus.ATTENDED and previous != AttendanceStatus.ATTENDED:
+        ev = db.get(Event, reg.event_id)
+        if ev and ev.guild_id is not None:
+            streak_svc.register_attendance(
+                db, player_id=reg.player_id, guild_id=ev.guild_id,
+            )
     db.flush()
     return reg
 
@@ -221,7 +231,11 @@ def award_event_exp(
     awarded = 0
     total_exp = 0
 
+    from app.services import streak as streak_svc
+
     for reg in regs:
+        positive_for_streak = 0  # acumulado para aplicar bonus al final
+
         # Participación / no-show
         if reg.attendance_status == AttendanceStatus.ATTENDED:
             tx = exp_svc.award_exp(
@@ -229,6 +243,7 @@ def award_event_exp(
                 related_event_id=event_id, admin_id=admin_id,
             )
             total_exp += tx.amount
+            positive_for_streak += max(0, tx.amount)
             awarded += 1
         elif reg.attendance_status == AttendanceStatus.NO_SHOW:
             tx = exp_svc.award_exp(
@@ -245,6 +260,7 @@ def award_event_exp(
                     related_event_id=event_id, admin_id=admin_id,
                 )
                 total_exp += tx.amount
+                positive_for_streak += max(0, tx.amount)
 
         # Posición final
         if reg.attendance_status == AttendanceStatus.ATTENDED:
@@ -255,6 +271,22 @@ def award_event_exp(
                     related_event_id=event_id, admin_id=admin_id,
                 )
                 total_exp += tx.amount
+                positive_for_streak += max(0, tx.amount)
+
+        # Bonus por racha activa (solo si asistió y tuvo EXP positiva)
+        if reg.attendance_status == AttendanceStatus.ATTENDED and positive_for_streak > 0 and ev.guild_id is not None:
+            s = streak_svc.get(db, player_id=reg.player_id, guild_id=ev.guild_id)
+            if s and s.current_streak > 1:
+                mult = streak_svc.exp_multiplier(s.current_streak)
+                bonus = int(round(positive_for_streak * (mult - 1.0)))
+                if bonus > 0:
+                    tx = exp_svc.award_exp(
+                        db, reg.player_id, "streak_bonus",
+                        amount=bonus,
+                        related_event_id=event_id, admin_id=admin_id,
+                        reason=f"Racha x{mult:.2f} (streak {s.current_streak})",
+                    )
+                    total_exp += tx.amount
 
     # Misiones automáticas por resultados (post-award)
     try:

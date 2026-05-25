@@ -49,6 +49,7 @@ export default function Navbar() {
         <nav className="hidden md:flex items-center gap-6">
           <NavLink to="/ruta" className={linkCls}>Ruta</NavLink>
           <NavLink to="/ranking" className={linkCls}>Ranking</NavLink>
+          <NavLink to="/leaderboard" className={linkCls}>Live</NavLink>
           <NavLink to="/events" className={linkCls}>Eventos</NavLink>
           <NavLink to="/catalog" className={linkCls}>Catálogo</NavLink>
           <NavLink to="/hall-of-fame" className={linkCls}>Hall of Fame</NavLink>

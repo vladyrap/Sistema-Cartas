@@ -27,6 +27,8 @@ EXP_RULES: dict[str, int] = {
     "themed_deck": 100,
     "no_show": -100,
     "unsportsmanlike": -200,
+    # Bonus dinámico — el amount lo calcula el caller, no hay default.
+    "streak_bonus": 0,
 }
 
 

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+.git/
+.github/
+*.log
+npm-debug.log*
+.vite/
+.eslintcache
+.env
+.env.local

@@ -50,7 +50,12 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="block text-xs text-white/60 mb-1.5">Contraseña</label>
+              <div className="flex items-baseline justify-between mb-1.5">
+                <label className="block text-xs text-white/60">Contraseña</label>
+                <Link to="/forgot-password" className="text-[11px] text-elite-blue hover:text-white">
+                  ¿La olvidaste?
+                </Link>
+              </div>
               <input
                 type="password"
                 required
