@@ -8,6 +8,7 @@ from app.services.progression import (
     apply_exp_delta,
     cumulative_exp_to_reach,
     exp_required_for_level,
+    has_elite_access,
     has_elite_pro_access,
     level_from_total_exp,
     progress_to_next_level,
@@ -21,13 +22,13 @@ from app.services.progression import (
 
 
 @pytest.mark.parametrize("level,expected", [
-    (1, RankName.INICIADO), (4, RankName.INICIADO),
-    (5, RankName.APRENDIZ), (9, RankName.APRENDIZ),
-    (10, RankName.DUELISTA), (14, RankName.DUELISTA),
-    (15, RankName.RETADOR), (19, RankName.RETADOR),
-    (20, RankName.ELITE), (24, RankName.ELITE),
-    (25, RankName.MAESTRO), (29, RankName.MAESTRO),
-    (30, RankName.CAMPEON),
+    (1, RankName.INICIADO),   (15, RankName.INICIADO),
+    (16, RankName.APRENDIZ),  (30, RankName.APRENDIZ),
+    (31, RankName.DUELISTA),  (45, RankName.DUELISTA),
+    (46, RankName.RETADOR),   (60, RankName.RETADOR),
+    (61, RankName.ELITE),     (75, RankName.ELITE),
+    (76, RankName.MAESTRO),   (90, RankName.MAESTRO),
+    (91, RankName.CAMPEON),   (100, RankName.CAMPEON),
 ])
 def test_rank_from_level(level, expected):
     assert rank_from_level(level) == expected
@@ -37,7 +38,7 @@ def test_rank_from_level_out_of_range():
     with pytest.raises(ValueError):
         rank_from_level(0)
     with pytest.raises(ValueError):
-        rank_from_level(31)
+        rank_from_level(MAX_LEVEL + 1)
 
 
 # ============================== EXP curve ==============================
@@ -50,18 +51,20 @@ def test_exp_required_for_level_1_is_zero():
 def test_exp_required_grows_with_level():
     e2 = exp_required_for_level(2)
     e10 = exp_required_for_level(10)
-    e20 = exp_required_for_level(20)
-    assert e2 < e10 < e20
+    e50 = exp_required_for_level(50)
+    e100 = exp_required_for_level(100)
+    assert e2 < e10 < e50 < e100
 
 
 def test_exp_required_for_level_2_is_100():
     assert exp_required_for_level(2) == 100
 
 
-def test_cumulative_exp_to_reach_30():
-    total = cumulative_exp_to_reach(30)
-    # Verificado empíricamente: ~37.7k para campeón desde Iniciado
-    assert 35000 < total < 45000
+def test_cumulative_exp_to_reach_max():
+    """Llegar al cap es aspiracional pero no absurdo."""
+    total = cumulative_exp_to_reach(MAX_LEVEL)
+    # Curva 1.06x → total ~530k EXP para L100
+    assert 400_000 < total < 700_000
 
 
 def test_cumulative_to_1_is_zero():
@@ -88,7 +91,7 @@ def test_level_from_total_exp_partial():
 
 
 def test_level_from_total_exp_caps_at_max():
-    level, in_lv = level_from_total_exp(999999)
+    level, in_lv = level_from_total_exp(10_000_000)
     assert level == MAX_LEVEL
     assert in_lv == 0
 
@@ -112,8 +115,9 @@ def test_apply_exp_delta_single_levelup():
 
 def test_apply_exp_delta_multi_levelup():
     new_level, new_in, gained = apply_exp_delta(1, 0, 1000)
-    assert new_level >= 4
-    assert gained >= 3
+    # Con curva 1.06x, 1000 EXP desde L1 saltea unos 8-9 niveles
+    assert new_level >= 7
+    assert gained >= 6
 
 
 def test_apply_exp_delta_negative_caps_at_zero():
@@ -125,7 +129,7 @@ def test_apply_exp_delta_negative_caps_at_zero():
 
 
 def test_apply_exp_delta_max_level_caps():
-    new_level, new_in, _ = apply_exp_delta(MAX_LEVEL, 0, 5000)
+    new_level, new_in, _ = apply_exp_delta(MAX_LEVEL, 0, 500_000)
     assert new_level == MAX_LEVEL
     assert new_in == 0
 
@@ -134,10 +138,10 @@ def test_apply_exp_delta_max_level_caps():
 
 
 def test_progress_to_next_normal():
-    info = progress_to_next_level(5, 50)
-    assert info["current_level"] == 5
+    info = progress_to_next_level(16, 50)
+    assert info["current_level"] == 16
     assert info["current_rank"] == RankName.APRENDIZ
-    assert info["next_level"] == 6
+    assert info["next_level"] == 17
     assert info["percent_to_next"] > 0
 
 
@@ -157,19 +161,34 @@ def test_unlocked_benefits_at_level_1():
     assert unlocked[0]["level"] == 1
 
 
-def test_unlocked_benefits_at_level_25():
-    benefits = unlocked_benefits(25)
+def test_unlocked_benefits_at_level_75():
+    """Nivel 75 desbloquea 7 hitos: 1, 10, 20, 30, 45, 60, 75."""
+    benefits = unlocked_benefits(75)
     unlocked = [b for b in benefits if b["unlocked"]]
     locked = [b for b in benefits if not b["unlocked"]]
-    # Nivel 25 desbloquea hasta Catálogo Elite Pro (5 hitos: 1, 5, 10, 15, 20, 25)
-    assert len(unlocked) == 6
-    assert len(locked) == 1  # solo nivel 30
+    assert len(unlocked) == 7
+    # Quedan: 90 y 100
+    assert {b["level"] for b in locked} == {90, 100}
 
 
-def test_elite_pro_requires_25():
-    assert not has_elite_pro_access(24)
-    assert has_elite_pro_access(25)
-    assert has_elite_pro_access(30)
+def test_unlocked_benefits_at_max():
+    benefits = unlocked_benefits(MAX_LEVEL)
+    unlocked = [b for b in benefits if b["unlocked"]]
+    # 9 hitos en total
+    assert len(unlocked) == 9
+    assert all(b["unlocked"] for b in benefits)
+
+
+def test_elite_access_thresholds():
+    assert not has_elite_access(59)
+    assert has_elite_access(60)
+    assert has_elite_access(100)
+
+
+def test_elite_pro_requires_75():
+    assert not has_elite_pro_access(74)
+    assert has_elite_pro_access(75)
+    assert has_elite_pro_access(100)
 
 
 # ============================== Regla de reinicio Maestro→Duelista ==============================
@@ -186,19 +205,20 @@ def test_elite_pro_requires_25():
     (RankName.CAMPEON, PROMOTED_STARTING_LEVEL),
 ])
 def test_starting_level_rule(prev_rank, expected_level):
-    """Solo Maestro y Campeón en T-1 → comienzan Duelista N10."""
+    """Solo Maestro y Campeón en T-1 → comienzan en DUELISTA (nivel 31)."""
     assert starting_level_for_new_season(prev_rank) == expected_level
 
 
 def test_promoted_does_not_unlock_pro_benefits():
-    """El jugador promovido empieza en N10 → NO tiene acceso a Catálogo Pro (N25)."""
+    """El jugador promovido empieza en N31 → NO tiene acceso a Catálogo Pro (N75)."""
     start = starting_level_for_new_season(RankName.MAESTRO)
-    assert start == 10
+    assert start == 31
     assert not has_elite_pro_access(start)
+    assert rank_from_level(start) == RankName.DUELISTA
     benefits = unlocked_benefits(start)
     unlocked = [b for b in benefits if b["unlocked"]]
-    # Niveles 1, 5, 10 → 3 hitos
-    assert len(unlocked) == 3
-    # Catálogo Pro (25) y Final Elite (30) deben estar BLOQUEADOS
+    # Niveles ≤ 31: 1, 10, 20, 30 → 4 hitos
+    assert len(unlocked) == 4
+    # Catálogo Pro (75) y Final Elite (90) deben estar BLOQUEADOS
     locked_levels = [b["level"] for b in benefits if not b["unlocked"]]
-    assert 25 in locked_levels and 30 in locked_levels
+    assert 75 in locked_levels and 90 in locked_levels

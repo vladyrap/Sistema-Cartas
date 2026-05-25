@@ -1,16 +1,19 @@
 // Helpers cliente: replica las funciones puras del backend para mostrar UI sin roundtrip.
 
 export const MIN_LEVEL = 1;
-export const MAX_LEVEL = 30;
+export const MAX_LEVEL = 100;
+
+export const EXP_GROWTH = 1.06;
+export const EXP_BASE = 100;
 
 export const RANK_BANDS = [
-  [1, 4, 'INICIADO'],
-  [5, 9, 'APRENDIZ'],
-  [10, 14, 'DUELISTA'],
-  [15, 19, 'RETADOR'],
-  [20, 24, 'ELITE'],
-  [25, 29, 'MAESTRO'],
-  [30, 30, 'CAMPEON'],
+  [1,  15,  'INICIADO'],
+  [16, 30,  'APRENDIZ'],
+  [31, 45,  'DUELISTA'],
+  [46, 60,  'RETADOR'],
+  [61, 75,  'ELITE'],
+  [76, 90,  'MAESTRO'],
+  [91, 100, 'CAMPEON'],
 ];
 
 export const RANK_COLORS = {
@@ -24,13 +27,15 @@ export const RANK_COLORS = {
 };
 
 export const BENEFITS_BY_LEVEL = {
-  1: 'Elite ID activa',
-  5: 'Misiones semanales',
-  10: 'Sorteos de temporada',
-  15: 'Preventa Nivel 1 (Elite Access básico)',
-  20: 'Elite Access completo',
-  25: 'Catálogo Elite Pro',
-  30: 'Final Elite y prioridad máxima',
+  1:   'Elite ID activa',
+  10:  'Torneos casuales y eventos básicos',
+  20:  'Misiones semanales',
+  30:  'Sorteos de temporada',
+  45:  'Preventa Nivel 1 (Elite Access básico)',
+  60:  'Elite Access completo',
+  75:  'Catálogo Elite Pro',
+  90:  'Final Elite y prioridad máxima',
+  100: 'Leyenda del Gremio',
 };
 
 export function rankFromLevel(level) {
@@ -42,7 +47,7 @@ export function rankFromLevel(level) {
 
 export function expRequiredForLevel(target) {
   if (target <= MIN_LEVEL) return 0;
-  return Math.round(100 * Math.pow(1.15, target - 2));
+  return Math.round(EXP_BASE * Math.pow(EXP_GROWTH, target - 2));
 }
 
 export function progressToNext(level, expInLevel) {

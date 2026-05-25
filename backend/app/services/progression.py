@@ -9,28 +9,38 @@ from app.models.base import RankName
 # ============================== Constantes ==============================
 
 MIN_LEVEL = 1
-MAX_LEVEL = 30
+MAX_LEVEL = 100
 
-# Mapa nivel → rango (inclusive en ambos extremos)
+# Crecimiento de la curva de EXP. Con 1.15x un L100 cuesta ~14M de EXP por
+# nivel — irreal. Con 1.06x el total acumulado a L100 es ~600k EXP, alcanzable
+# para un jugador muy activo durante varias temporadas.
+EXP_GROWTH = 1.06
+EXP_BASE = 100
+
+# Mapa nivel → rango. 7 rangos distribuidos a través de 100 niveles.
+# CAMPEON queda como tier final exclusivo (10 niveles top).
 RANK_BANDS: list[tuple[int, int, RankName]] = [
-    (1, 4, RankName.INICIADO),
-    (5, 9, RankName.APRENDIZ),
-    (10, 14, RankName.DUELISTA),
-    (15, 19, RankName.RETADOR),
-    (20, 24, RankName.ELITE),
-    (25, 29, RankName.MAESTRO),
-    (30, 30, RankName.CAMPEON),
+    (1,  15,  RankName.INICIADO),
+    (16, 30,  RankName.APRENDIZ),
+    (31, 45,  RankName.DUELISTA),
+    (46, 60,  RankName.RETADOR),
+    (61, 75,  RankName.ELITE),
+    (76, 90,  RankName.MAESTRO),
+    (91, 100, RankName.CAMPEON),
 ]
 
-# Beneficios desbloqueados al alcanzar un nivel (acumulativos hacia arriba)
+# Beneficios desbloqueados al alcanzar un nivel (acumulativos hacia arriba).
+# Re-escalados al cap de 100 con hitos intermedios para mantener engagement.
 BENEFITS_BY_LEVEL: dict[int, str] = {
-    1: "Elite ID activa",
-    5: "Misiones semanales",
-    10: "Sorteos de temporada",
-    15: "Preventa Nivel 1 (Elite Access básico)",
-    20: "Elite Access completo",
-    25: "Catálogo Elite Pro",
-    30: "Final Elite y prioridad máxima",
+    1:   "Elite ID activa",
+    10:  "Torneos casuales y eventos básicos",
+    20:  "Misiones semanales",
+    30:  "Sorteos de temporada",
+    45:  "Preventa Nivel 1 (Elite Access básico)",
+    60:  "Elite Access completo",
+    75:  "Catálogo Elite Pro",
+    90:  "Final Elite y prioridad máxima",
+    100: "Leyenda del Gremio",
 }
 
 
@@ -40,21 +50,25 @@ BENEFITS_BY_LEVEL: dict[int, str] = {
 def exp_required_for_level(target_level: int) -> int:
     """EXP que necesitas para PASAR DEL nivel (target-1) AL nivel target.
 
-    Crece exponencial moderado. Nivel 1→2 = 100. Nivel 29→30 ≈ 5000.
+    Curva: base 100, crecimiento EXP_GROWTH (6%) por nivel.
+      Nivel 1 → 2:  100
+      Nivel 10:     ~155
+      Nivel 50:     ~1700
+      Nivel 100:    ~28k
     """
     if target_level <= MIN_LEVEL:
         return 0
     if target_level > MAX_LEVEL:
         raise ValueError(f"Nivel objetivo {target_level} excede máximo {MAX_LEVEL}")
-    # crecimiento 15% por nivel, base 100
-    return round(100 * (1.15 ** (target_level - 2)))
+    return round(EXP_BASE * (EXP_GROWTH ** (target_level - 2)))
 
 
 def cumulative_exp_to_reach(level: int) -> int:
     """EXP total acumulada para llegar al nivel dado desde nivel 1.
 
-    cumulative_exp_to_reach(1) == 0
-    cumulative_exp_to_reach(30) ≈ 27000
+    cumulative_exp_to_reach(1)   == 0
+    cumulative_exp_to_reach(30)  ≈ 8500
+    cumulative_exp_to_reach(100) ≈ 470k
     """
     if level <= MIN_LEVEL:
         return 0
@@ -157,13 +171,13 @@ def unlocked_benefits(level: int) -> list[dict]:
 
 
 def has_elite_access(level: int) -> bool:
-    """Elite Access se considera completo desde nivel 20 (con preventa básica desde 15)."""
-    return level >= 20
+    """Elite Access se considera completo desde nivel 60 (con preventa básica desde 45)."""
+    return level >= 60
 
 
 def has_elite_pro_access(level: int) -> bool:
-    """Catálogo Elite Pro requiere nivel 25+."""
-    return level >= 25
+    """Catálogo Elite Pro requiere nivel 75+."""
+    return level >= 75
 
 
 # ============================== EXP application ==============================
@@ -209,20 +223,20 @@ def apply_exp_delta(
 
 # ============================== Inicio de temporada ==============================
 
-PROMOTED_STARTING_LEVEL = 10  # Duelista
+PROMOTED_STARTING_LEVEL = 31  # Inicio de DUELISTA en el cap de 100
 
 
 def starting_level_for_new_season(previous_max_rank: RankName | None) -> int:
     """Nivel inicial al comenzar una nueva temporada según el rango previo.
 
     Regla:
-      - Maestro o Campeón en T-1 → comienza en nivel 10 (Duelista).
+      - Maestro o Campeón en T-1 → comienza en nivel 31 (Duelista).
       - Cualquier otro caso (incluyendo jugadores nuevos sin historia) → nivel 1.
 
     Importante: la promoción de inicio NO desbloquea beneficios avanzados.
     Los beneficios se evalúan siempre con el nivel actual de la temporada en
-    curso, así que el jugador promovido empieza con beneficios de nivel 10
-    pero no con Catálogo Pro (nivel 25) ni Final Elite (nivel 30).
+    curso, así que el jugador promovido empieza con beneficios de nivel 31
+    pero no con Catálogo Pro (nivel 75) ni Final Elite (nivel 90).
     """
     if previous_max_rank is not None and RankName.is_top_tier(previous_max_rank):
         return PROMOTED_STARTING_LEVEL

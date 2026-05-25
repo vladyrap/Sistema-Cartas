@@ -72,9 +72,9 @@ def test_activate_promotes_master_and_champion(db, make_season, make_player):
     sp_champ = db.query(SeasonProgress).filter_by(season_id=t2.id, player_id=p_champ.id).one()
     sp_reg = db.query(SeasonProgress).filter_by(season_id=t2.id, player_id=p_regular.id).one()
 
-    assert sp_master.level == 10 and sp_master.was_promoted_start
+    assert sp_master.level == 31 and sp_master.was_promoted_start
     assert sp_master.current_rank == RankName.DUELISTA
-    assert sp_champ.level == 10 and sp_champ.was_promoted_start
+    assert sp_champ.level == 31 and sp_champ.was_promoted_start
     assert sp_reg.level == 1 and not sp_reg.was_promoted_start
     assert sp_reg.current_rank == RankName.INICIADO
 
@@ -179,6 +179,6 @@ def test_preview_reset_matches_activate(db, make_season, make_player):
     sp_master = db.query(SeasonProgress).filter_by(season_id=t2.id, player_id=p_master.id).one()
     sp_reg = db.query(SeasonProgress).filter_by(season_id=t2.id, player_id=p_regular.id).one()
 
-    assert preview_by_id[p_master.id]["starting_level"] == sp_master.starting_level == 10
+    assert preview_by_id[p_master.id]["starting_level"] == sp_master.starting_level == 31
     assert preview_by_id[p_regular.id]["starting_level"] == sp_reg.starting_level == 1
     assert preview_by_id[p_master.id]["was_promoted_start"] is True
