@@ -40,6 +40,8 @@ from app.models.hall_of_fame import HallOfFameEntry
 from app.models.admin_action_log import AdminActionLog
 from app.models.notification import Notification
 from app.models.player_streak import PlayerStreak
+from app.models.announcement import Announcement
+from app.models.wishlist import ProductWishlist
 
 __all__ = [
     "Base",
@@ -84,4 +86,6 @@ __all__ = [
     "AuthToken",
     "AuthTokenKind",
     "PlayerStreak",
+    "Announcement",
+    "ProductWishlist",
 ]

@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Lock, Sparkles, Crown, Zap, Package } from 'lucide-react';
+import WishlistButton from './WishlistButton';
 
 const ACCESS_META = {
   NORMAL: { label: 'Normal', cls: 'bg-white/5 text-white/60 border-white/10', icon: Package },
@@ -33,6 +34,10 @@ export default function ProductCard({ product, eligibility, onReserve }) {
           <Zap size={10} /> PREVENTA
         </div>
       )}
+
+      <div className="absolute bottom-3 right-3 z-10">
+        <WishlistButton productId={product.id} />
+      </div>
 
       <div className="aspect-[4/3] bg-gradient-to-br from-bg-elevated via-bg-surface to-black relative flex items-center justify-center">
         {product.image_url ? (

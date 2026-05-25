@@ -710,6 +710,43 @@ class StreakOut(BaseModel):
     next_milestone: int | None = None
 
 
+class AnnouncementOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    guild_id: int
+    author_user_id: int
+    title: str
+    body: str | None = None
+    is_pinned: bool
+    expires_at: datetime | None = None
+    created_at: datetime
+
+
+class AnnouncementCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=160)
+    body: str | None = None
+    is_pinned: bool = True
+    expires_at: datetime | None = None
+
+
+class AnnouncementUpdate(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    is_pinned: bool | None = None
+    expires_at: datetime | None = None
+
+
+class WishlistItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: int
+    product_name: str | None = None
+    product_image_url: str | None = None
+    product_stock: int | None = None
+    product_price_clp: int | None = None
+    created_at: datetime
+
+
 class CheckinResolveOut(BaseModel):
     player_id: int
     alias: str

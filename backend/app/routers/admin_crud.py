@@ -235,8 +235,28 @@ def update_product(product_id: int, payload: ProductUpdate, db: DbDep, admin: Sc
     if payload.game_id is not None and not db.get(Game, payload.game_id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Juego no encontrado")
     changes = payload.model_dump(exclude_unset=True)
+    prev_stock = p.stock
     for k, v in changes.items():
         setattr(p, k, v)
+
+    # Notif a wishlist: stock pasó de 0 a >0
+    if "stock" in changes and prev_stock == 0 and p.stock > 0:
+        from app.models import ProductWishlist, PlayerProfile
+        from app.services import notifications as notif_svc
+        wish_rows = db.execute(
+            select(ProductWishlist, PlayerProfile)
+            .join(PlayerProfile, ProductWishlist.player_id == PlayerProfile.id)
+            .where(ProductWishlist.product_id == p.id)
+        ).all()
+        for _w, prof in wish_rows:
+            notif_svc.notify(
+                db, player_id=prof.id, guild_id=p.guild_id,
+                type="wishlist_restock",
+                title="✨ Vuelve a estar disponible",
+                body=f"'{p.name}' tiene stock nuevamente.",
+                link="/catalog",
+            )
+
     audit.log(db, admin_id=admin.id, action="product.update", guild_id=p.guild_id,
               target_kind="product", target_id=p.id,
               payload={"name": p.name, "fields": list(changes.keys())})
