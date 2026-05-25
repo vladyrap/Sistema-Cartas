@@ -14,6 +14,7 @@ import Events from './pages/Events';
 import EventDetail from './pages/EventDetail';
 import Catalog from './pages/Catalog';
 import MyReservations from './pages/MyReservations';
+import MyDecks from './pages/MyDecks';
 import Missions from './pages/Missions';
 import HallOfFame from './pages/HallOfFame';
 import PublicProfile from './pages/PublicProfile';
@@ -58,6 +59,7 @@ export default function App() {
       <Route path="/events/:id" element={<EventDetail />} />
       <Route path="/catalog" element={<Catalog />} />
       <Route path="/my-reservations" element={<MyReservations />} />
+      <Route path="/decks" element={<MyDecks />} />
       <Route path="/missions" element={<Missions />} />
       <Route path="/hall-of-fame" element={<HallOfFame />} />
       <Route path="/players/:id" element={<PublicProfile />} />

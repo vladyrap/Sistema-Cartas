@@ -58,6 +58,7 @@ export default function Navbar() {
           {isAuthed && <NavLink to="/dashboard" className={linkCls}>Mi Dashboard</NavLink>}
           {isAuthed && <NavLink to="/missions" className={linkCls}>Misiones</NavLink>}
           {isAuthed && <NavLink to="/my-reservations" className={linkCls}>Mis reservas</NavLink>}
+          {isAuthed && <NavLink to="/decks" className={linkCls}>Mis decks</NavLink>}
           {isAdmin && (
             <NavLink to="/admin" className={({ isActive }) => `${linkCls({ isActive })} text-elite-gold`}>
               <span className="inline-flex items-center gap-1"><Shield size={12} /> Admin</span>

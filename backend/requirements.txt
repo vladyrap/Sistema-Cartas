@@ -17,3 +17,5 @@ pytest==8.3.4
 slowapi==0.1.9
 # Postgres driver: requerido para prod, opcional en dev (default sqlite)
 psycopg2-binary==2.9.10
+# Anthropic API client para features de IA (deck analyzer, weekly summary)
+anthropic==0.50.0

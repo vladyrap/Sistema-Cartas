@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     smtp_tls: bool = True
     # Base URL pública del frontend para construir links en emails
     frontend_url: str = "http://localhost:5173"
+    # AI backend: "anthropic" (Claude API), "mock" (respuestas canned para dev)
+    ai_backend: str = "mock"
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-6"
 
     @property
     def cors_origins(self) -> list[str]:

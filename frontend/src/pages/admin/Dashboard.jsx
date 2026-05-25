@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../lib/useAuth';
 import { useGuild } from '../../lib/useGuild';
 import { describeAction, formatPayload } from '../../lib/activityActions';
+import AiSummaryWidget from '../../components/AiSummaryWidget';
 
 const GUILD_SCOPED_CARDS = [
   { to: '/admin/seasons', icon: Trophy, label: 'Temporadas', desc: 'Cerrar, crear y activar con regla de reset', color: 'text-elite-violet' },
@@ -122,6 +123,12 @@ export default function AdminDashboard() {
           </Link>
         ))}
       </div>
+
+      {isMaestro && (
+        <div className="mt-8">
+          <AiSummaryWidget />
+        </div>
+      )}
 
       {isMaestro && recentActivity.length > 0 && (
         <div className="mt-8 p-5 rounded-2xl bg-bg-surface border border-bg-border">
