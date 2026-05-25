@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, String
+from sqlalchemy import DateTime, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UserRole
@@ -21,6 +22,7 @@ class User(Base, TimestampMixin):
         Enum(UserRole, name="user_role"), nullable=False, default=UserRole.PLAYER
     )
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     profile: Mapped["PlayerProfile | None"] = relationship(
         "PlayerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"

@@ -24,6 +24,15 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+
+class TokenAndPassword(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)

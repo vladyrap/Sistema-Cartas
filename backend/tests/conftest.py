@@ -15,6 +15,8 @@ from app.core.security import hash_password
 from app.models import (
     Base,
     Game,
+    Guild,
+    GuildStatus,
     PlayerProfile,
     Season,
     SeasonStatus,
@@ -88,7 +90,20 @@ def make_player(db: Session):
 
 
 @pytest.fixture()
-def make_season(db: Session):
+def default_guild(db: Session) -> Guild:
+    """Gremio default usado por tests legacy que asumen un solo tenant."""
+    g = db.scalar(__import__("sqlalchemy").select(Guild).where(Guild.code == "test"))
+    if g:
+        return g
+    g = Guild(code="test", name="Gremio Test", status=GuildStatus.ACTIVE, is_public=True)
+    db.add(g)
+    db.commit()
+    db.refresh(g)
+    return g
+
+
+@pytest.fixture()
+def make_season(db: Session, default_guild: Guild):
     counter = {"n": 0}
 
     def _make(name: str = "", status: SeasonStatus = SeasonStatus.DRAFT, **extra) -> Season:
@@ -96,6 +111,7 @@ def make_season(db: Session):
         counter["n"] += 1
         n = counter["n"]
         s = Season(
+            guild_id=extra.pop("guild_id", default_guild.id),
             number=n,
             name=name or f"Temporada {n}",
             starts_at=datetime.now(timezone.utc),

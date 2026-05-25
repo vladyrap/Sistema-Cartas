@@ -1,12 +1,41 @@
 """FastAPI app entrypoint."""
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.routers import activity, admin, admin_crud, auth, catalog, events, gamification, guilds, notifications, players, rankings, reservations, seasons
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Inyecta headers de seguridad estándar.
+
+    Notas:
+    - CSP es laxa para APIs (no servimos HTML aquí). El front (Vite/Vercel/etc)
+      debe definir el suyo propio.
+    - HSTS solo tiene sentido detrás de HTTPS; FastAPI lo manda igual y el
+      browser solo lo respeta sobre TLS.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "interest-cohort=()"
+        if settings.is_prod:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
 
 app = FastAPI(
     title="EliteCards API",
@@ -14,6 +43,23 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Orden de middlewares: ejecutan inverso al orden de add_middleware.
+# 1) Security headers (último en add, primer en correr — wrappea todo).
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 2) En prod: forzar HTTPS + restringir Host.
+if settings.is_prod:
+    app.add_middleware(HTTPSRedirectMiddleware)
+    # Trusted hosts: derivado de cors_origins, descartando esquema/puerto.
+    trusted_hosts = []
+    for o in settings.cors_origins:
+        host = o.replace("https://", "").replace("http://", "").split(":")[0].split("/")[0]
+        if host:
+            trusted_hosts.append(host)
+    if trusted_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
+
+# 3) CORS (el más cerca de la app, corre justo antes del handler).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -21,6 +67,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiter (slowapi se monta como state + exception handler)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.get("/health")

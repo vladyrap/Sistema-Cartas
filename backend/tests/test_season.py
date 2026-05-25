@@ -5,13 +5,14 @@ from app.models import RankName, SeasonHistory, SeasonProgress, SeasonStatus
 from app.services import season as season_svc
 
 
-def test_create_season_in_draft(db, make_season):
+def test_create_season_in_draft(db, make_season, default_guild):
     """Una temporada nueva nace en DRAFT."""
     s1 = make_season(status=SeasonStatus.CLOSED)
     s2 = season_svc.create_season(
         db, name="Temporada Test",
         starts_at=s1.starts_at, ends_at=s1.ends_at,
         previous_season_id=s1.id,
+        guild_id=default_guild.id,
     )
     db.commit()
     assert s2.status == SeasonStatus.DRAFT

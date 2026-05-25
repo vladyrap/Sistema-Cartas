@@ -20,6 +20,7 @@ from app.models.base import (
 from app.models.user import User
 from app.models.guild import Guild, GuildMembership
 from app.models.guild_join_request import GuildJoinRequest, JoinRequestStatus
+from app.models.auth_token import AuthToken, AuthTokenKind
 from app.models.player import PlayerProfile
 from app.models.game import Game
 from app.models.season import Season
@@ -79,4 +80,6 @@ __all__ = [
     "HallOfFameEntry",
     "AdminActionLog",
     "Notification",
+    "AuthToken",
+    "AuthTokenKind",
 ]
