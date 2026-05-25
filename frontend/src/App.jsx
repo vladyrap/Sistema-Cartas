@@ -35,6 +35,7 @@ import AdminPlayers from './pages/admin/Players';
 import AdminMissions from './pages/admin/Missions';
 import AdminAchievements from './pages/admin/Achievements';
 import AdminJoinRequests from './pages/admin/JoinRequests';
+import AdminCheckin from './pages/admin/Checkin';
 import SuperAdminGuilds from './pages/super_admin/Guilds';
 
 export default function App() {
@@ -76,6 +77,7 @@ export default function App() {
       <Route path="/admin/missions" element={<AdminMissions />} />
       <Route path="/admin/achievements" element={<AdminAchievements />} />
       <Route path="/admin/join-requests" element={<AdminJoinRequests />} />
+      <Route path="/admin/checkin" element={<AdminCheckin />} />
       <Route path="/super-admin/guilds" element={<SuperAdminGuilds />} />
     </Routes>
   );

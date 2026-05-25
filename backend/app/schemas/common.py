@@ -710,6 +710,20 @@ class StreakOut(BaseModel):
     next_milestone: int | None = None
 
 
+class CheckinResolveOut(BaseModel):
+    player_id: int
+    alias: str
+    elite_id: str
+    avatar_url: str | None = None
+
+
+class CheckinResult(BaseModel):
+    action: str  # 'already_attended' | 'marked' | 'registered_and_marked'
+    player_id: int
+    alias: str
+    registration_id: int
+
+
 class PageMeta(BaseModel):
     page: int
     page_size: int

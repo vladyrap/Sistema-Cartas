@@ -13,7 +13,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
 from app.core.rate_limit import limiter
-from app.routers import activity, admin, admin_crud, auth, catalog, events, gamification, guilds, notifications, players, rankings, reservations, seasons, streaks, uploads
+from app.routers import activity, admin, admin_crud, auth, catalog, checkin, events, gamification, guilds, notifications, players, rankings, reservations, seasons, streaks, uploads
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -98,6 +98,7 @@ app.include_router(notifications.router, prefix="/api/notifications", tags=["not
 app.include_router(activity.router, prefix="/api/activity", tags=["activity"])
 app.include_router(streaks.router, prefix="/api/streaks", tags=["streaks"])
 app.include_router(uploads.router, prefix="/api/uploads", tags=["uploads"])
+app.include_router(checkin.router, prefix="/api/checkin", tags=["checkin"])
 app.include_router(guilds.router, prefix="/api/guilds", tags=["guilds"])
 app.include_router(guilds.super_router, prefix="/api/super-admin", tags=["super-admin"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])

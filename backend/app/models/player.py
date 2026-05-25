@@ -34,6 +34,10 @@ class PlayerProfile(Base, TimestampMixin):
     elite_id_code: Mapped[str] = mapped_column(String(20), unique=True, index=True, nullable=False)
     elite_id_number: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
 
+    # Token opaco para QR de check-in. Se genera al crear el perfil; se puede
+    # regenerar si el jugador sospecha que alguien lo copió.
+    checkin_token: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+
     # Prestigio histórico acumulado (NUNCA se reinicia)
     prestige: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
