@@ -4,6 +4,7 @@ import { useAuth } from '../lib/useAuth';
 import { useGuild } from '../lib/useGuild';
 import NotificationsBell from './NotificationsBell';
 import GuildSwitcher from './GuildSwitcher';
+import ThemePicker from './ThemePicker';
 
 const linkCls = ({ isActive }) =>
   `text-sm transition-colors ${isActive ? 'text-white' : 'text-white/60 hover:text-white'}`;
@@ -68,7 +69,8 @@ export default function Navbar() {
           )}
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <ThemePicker />
           {isAuthed ? (
             <>
               <GuildSwitcher />
