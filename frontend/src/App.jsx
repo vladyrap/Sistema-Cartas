@@ -7,14 +7,21 @@ import ResetPassword from './pages/ResetPassword';
 import VerifyEmail from './pages/VerifyEmail';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
+import ProfilePremium from './pages/ProfilePremium';
 import RutaDelCampeon from './pages/RutaDelCampeon';
 import Ranking from './pages/Ranking';
 import Leaderboard from './pages/Leaderboard';
 import Events from './pages/Events';
 import EventDetail from './pages/EventDetail';
+import LiveTournament from './pages/LiveTournament';
+import CinematicMode from './pages/CinematicMode';
+import EventReplay from './pages/EventReplay';
 import Catalog from './pages/Catalog';
+import CatalogPremium from './pages/CatalogPremium';
 import MyReservations from './pages/MyReservations';
 import MyDecks from './pages/MyDecks';
+import DeckBuilder from './pages/DeckBuilder';
+import Card3DShowcase from './pages/Card3DShowcase';
 import Missions from './pages/Missions';
 import HallOfFame from './pages/HallOfFame';
 import PublicProfile from './pages/PublicProfile';
@@ -52,14 +59,21 @@ export default function App() {
       <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/profile" element={<Profile />} />
+      <Route path="/profile/premium" element={<ProfilePremium />} />
       <Route path="/ruta" element={<RutaDelCampeon />} />
       <Route path="/ranking" element={<Ranking />} />
       <Route path="/leaderboard" element={<Leaderboard />} />
       <Route path="/events" element={<Events />} />
       <Route path="/events/:id" element={<EventDetail />} />
+      <Route path="/events/:id/live" element={<LiveTournament />} />
+      <Route path="/events/:id/cinema" element={<CinematicMode />} />
+      <Route path="/events/:id/replay" element={<EventReplay />} />
       <Route path="/catalog" element={<Catalog />} />
+      <Route path="/catalog/premium" element={<CatalogPremium />} />
       <Route path="/my-reservations" element={<MyReservations />} />
       <Route path="/decks" element={<MyDecks />} />
+      <Route path="/decks/:id/builder" element={<DeckBuilder />} />
+      <Route path="/decks/:id/showcase" element={<Card3DShowcase />} />
       <Route path="/missions" element={<Missions />} />
       <Route path="/hall-of-fame" element={<HallOfFame />} />
       <Route path="/players/:id" element={<PublicProfile />} />
