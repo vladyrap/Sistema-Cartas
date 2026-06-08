@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
 from app.core.rate_limit import limiter
-from app.routers import activity, admin, admin_crud, ai, announcements, auth, catalog, checkin, decks, events, gamification, guilds, notifications, players, polls, rankings, ratings, realtime, referrals, reservations, search as search_router, seasons, streaks, tcg as tcg_router, uploads, wishlist
+from app.routers import activity, admin, admin_crud, ai, announcements, auth, catalog, checkin, cosmos, decks, events, gamification, guilds, notifications, players, polls, rankings, ratings, realtime, referrals, reservations, search as search_router, seasons, streaks, tcg as tcg_router, uploads, wishlist
 
 
 @asynccontextmanager
@@ -157,3 +157,4 @@ app.include_router(ratings.router, prefix="/api/ratings", tags=["ratings"])
 app.include_router(ratings.bracket_router, prefix="/api", tags=["bracket"])
 app.include_router(search_router.router, prefix="/api", tags=["search"])
 app.include_router(search_router.admin_router, prefix="/api/admin", tags=["admin"])
+app.include_router(cosmos.router, prefix="/api/cosmos", tags=["cosmos"])
