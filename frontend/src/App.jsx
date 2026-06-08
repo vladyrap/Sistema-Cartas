@@ -25,6 +25,10 @@ import Card3DShowcase from './pages/Card3DShowcase';
 import Cosmos from './pages/Cosmos';
 import ChampionsVision from './pages/ChampionsVision';
 import WarRoom from './pages/WarRoom';
+import SpectatorStream from './pages/SpectatorStream';
+import CardHologramLab from './pages/CardHologramLab';
+import BracketReplayCinematic from './pages/BracketReplayCinematic';
+import PlayerTrailer from './pages/PlayerTrailer';
 import Missions from './pages/Missions';
 import HallOfFame from './pages/HallOfFame';
 import PublicProfile from './pages/PublicProfile';
@@ -80,6 +84,10 @@ export default function App() {
       <Route path="/cosmos" element={<Cosmos />} />
       <Route path="/players/:id/vision" element={<ChampionsVision />} />
       <Route path="/warroom" element={<WarRoom />} />
+      <Route path="/events/:id/table" element={<SpectatorStream />} />
+      <Route path="/decks/:id/holo" element={<CardHologramLab />} />
+      <Route path="/events/:id/cinema-replay" element={<BracketReplayCinematic />} />
+      <Route path="/players/:id/trailer" element={<PlayerTrailer />} />
       <Route path="/missions" element={<Missions />} />
       <Route path="/hall-of-fame" element={<HallOfFame />} />
       <Route path="/players/:id" element={<PublicProfile />} />
