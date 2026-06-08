@@ -66,6 +66,24 @@ from app.services.tcg import normalize_card_name
 router = APIRouter()
 
 
+def _resolve_guild_id(db, guild) -> int:
+    """Devuelve guild_id efectivo: el del header si vino, sino el primer Guild
+    ACTIVE de la BD como fallback (típico para admins globales).
+    Lanza 400 si no hay ningún Guild activo en el sistema."""
+    from app.models import Guild, GuildStatus
+    if guild is not None:
+        return guild.id
+    g = db.scalar(
+        select(Guild).where(Guild.status == GuildStatus.ACTIVE).order_by(Guild.id)
+    )
+    if g is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "No hay Gremio activo. Mandá header X-Guild-Id o creá un Gremio primero.",
+        )
+    return g.id
+
+
 # ============================== Games ==============================
 
 
@@ -153,8 +171,7 @@ def create_event(payload: EventCreate, db: DbDep, admin: ScopedAdminDep, guild: 
     if payload.season_id is not None and not db.get(Season, payload.season_id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Temporada no encontrada")
     data = payload.model_dump()
-    if guild is not None:
-        data["guild_id"] = guild.id
+    data["guild_id"] = _resolve_guild_id(db, guild)
     ev = Event(**data)
     db.add(ev)
     db.flush()
@@ -232,8 +249,7 @@ def create_product(payload: ProductCreate, db: DbDep, admin: ScopedAdminDep, gui
     if payload.game_id is not None and not db.get(Game, payload.game_id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Juego no encontrado")
     data = payload.model_dump()
-    if guild is not None:
-        data["guild_id"] = guild.id
+    data["guild_id"] = _resolve_guild_id(db, guild)
     p = Product(**data)
     db.add(p)
     db.flush()
@@ -328,8 +344,7 @@ def create_mission(payload: MissionCreate, db: DbDep, admin: ScopedAdminDep, gui
     if payload.season_id is not None and not db.get(Season, payload.season_id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Temporada no encontrada")
     data = payload.model_dump()
-    if guild is not None:
-        data["guild_id"] = guild.id
+    data["guild_id"] = _resolve_guild_id(db, guild)
     m = Mission(**data)
     db.add(m)
     db.flush()
@@ -384,8 +399,7 @@ def create_achievement(payload: AchievementCreate, db: DbDep, admin: ScopedAdmin
     if db.scalar(select(Achievement).where(Achievement.code == payload.code)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Código de medalla ya existe")
     data = payload.model_dump()
-    if guild is not None:
-        data["guild_id"] = guild.id
+    data["guild_id"] = _resolve_guild_id(db, guild)
     a = Achievement(**data)
     db.add(a)
     db.flush()
