@@ -24,6 +24,7 @@ import DeckBuilder from './pages/DeckBuilder';
 import Card3DShowcase from './pages/Card3DShowcase';
 import Cosmos from './pages/Cosmos';
 import ChampionsVision from './pages/ChampionsVision';
+import WarRoom from './pages/WarRoom';
 import Missions from './pages/Missions';
 import HallOfFame from './pages/HallOfFame';
 import PublicProfile from './pages/PublicProfile';
@@ -78,6 +79,7 @@ export default function App() {
       <Route path="/decks/:id/showcase" element={<Card3DShowcase />} />
       <Route path="/cosmos" element={<Cosmos />} />
       <Route path="/players/:id/vision" element={<ChampionsVision />} />
+      <Route path="/warroom" element={<WarRoom />} />
       <Route path="/missions" element={<Missions />} />
       <Route path="/hall-of-fame" element={<HallOfFame />} />
       <Route path="/players/:id" element={<PublicProfile />} />

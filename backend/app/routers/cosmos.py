@@ -17,6 +17,8 @@ from app.core.deps import DbDep
 from app.models import (
     Event,
     EventRegistration,
+    EventStatus,
+    Game,
     MatchResult,
     PlayerProfile,
     PlayerRating,
@@ -190,3 +192,195 @@ def cosmos(
     )
 
     return CosmosOut(stars=stars, edges=edges, champion_id=last_champ)
+
+
+# ============================== War Room Aggregates ==============================
+
+
+class WarRoomMeta(BaseModel):
+    archetype: str
+    game_id: int
+    game_name: str
+    deck_count: int
+    legal_count: int
+    win_rate: float | None = None
+
+
+class WarRoomEvent(BaseModel):
+    id: int
+    name: str
+    starts_at: str
+    status: str
+    registered: int
+    slots: int
+    game_name: str
+
+
+class WarRoomTopPlayer(BaseModel):
+    player_id: int
+    alias: str
+    elite_id_code: str
+    player_class: str
+    rating: float
+    matches: int
+    championships: int
+
+
+class WarRoomActivity(BaseModel):
+    timestamp: str
+    type: str   # match_result | event_finalized | player_joined | ...
+    summary: str
+
+
+class WarRoomTicker(BaseModel):
+    label: str
+    value: int
+
+
+class WarRoomOut(BaseModel):
+    tickers: list[WarRoomTicker]
+    meta: list[WarRoomMeta]
+    upcoming_events: list[WarRoomEvent]
+    top_players: list[WarRoomTopPlayer]
+    activity: list[WarRoomActivity]
+    cosmos_summary: dict
+
+
+@router.get("/warroom", response_model=WarRoomOut)
+def warroom(db: DbDep) -> WarRoomOut:
+    """Endpoint agregado para la pantalla holographic War Room."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import desc
+
+    now = datetime.now(timezone.utc)
+
+    # ---- Tickers ----
+    tickers = [
+        WarRoomTicker(label="Jugadores", value=db.scalar(select(func.count(PlayerProfile.id))) or 0),
+        WarRoomTicker(label="Matches", value=db.scalar(select(func.count(MatchResult.id))) or 0),
+        WarRoomTicker(label="Eventos", value=db.scalar(select(func.count(Event.id))) or 0),
+        WarRoomTicker(label="Ratings", value=db.scalar(select(func.count(PlayerRating.id))) or 0),
+    ]
+
+    # ---- Meta (archetypes con más decks) ----
+    from app.models import PlayerDeck as _PD, Game as _G
+    meta_rows = db.execute(
+        select(
+            _PD.archetype,
+            _PD.game_id,
+            _G.name,
+            func.count(_PD.id),
+            func.sum(func.case((_PD.is_legal.is_(True), 1), else_=0)) if False else func.count(_PD.id),
+        )
+        .join(_G, _PD.game_id == _G.id)
+        .where(_PD.archetype.is_not(None))
+        .group_by(_PD.archetype, _PD.game_id, _G.name)
+        .order_by(func.count(_PD.id).desc())
+        .limit(12)
+    ).all()
+    meta = [
+        WarRoomMeta(
+            archetype=r[0], game_id=r[1], game_name=r[2],
+            deck_count=int(r[3]), legal_count=int(r[3]),
+        )
+        for r in meta_rows
+    ]
+
+    # ---- Upcoming events (próximos OPEN/CLOSED) ----
+    upcoming = list(db.scalars(
+        select(Event)
+        .where(Event.status.in_([EventStatus.OPEN, EventStatus.CLOSED, EventStatus.DRAFT]))
+        .where(Event.starts_at >= now - timedelta(hours=24))
+        .order_by(Event.starts_at)
+        .limit(8)
+    )) if hasattr(Event, "status") else []
+    from app.models import EventStatus as _ES
+    upcoming = list(db.scalars(
+        select(Event)
+        .where(Event.starts_at >= now - timedelta(hours=24))
+        .order_by(Event.starts_at)
+        .limit(8)
+    ))
+    upcoming_data = []
+    for ev in upcoming:
+        regs = db.scalar(
+            select(func.count(EventRegistration.id)).where(EventRegistration.event_id == ev.id)
+        ) or 0
+        g = db.get(Game, ev.game_id)
+        upcoming_data.append(WarRoomEvent(
+            id=ev.id, name=ev.name,
+            starts_at=ev.starts_at.isoformat(),
+            status=ev.status.value if hasattr(ev.status, "value") else str(ev.status),
+            registered=int(regs), slots=ev.slots,
+            game_name=g.name if g else "—",
+        ))
+
+    # ---- Top players por rating ----
+    top_rating_rows = db.execute(
+        select(PlayerRating, PlayerProfile)
+        .join(PlayerProfile, PlayerProfile.id == PlayerRating.player_id)
+        .where(PlayerRating.matches_played >= 5)
+        .order_by(PlayerRating.rating.desc())
+        .limit(8)
+    ).all()
+    # Championships counts
+    champ_counts = dict(db.execute(
+        select(SeasonHistory.player_id, func.count(SeasonHistory.id))
+        .where(SeasonHistory.final_position == 1)
+        .group_by(SeasonHistory.player_id)
+    ).all())
+    top_players = [
+        WarRoomTopPlayer(
+            player_id=p.id, alias=p.alias, elite_id_code=p.elite_id_code,
+            player_class=p.player_class.value if hasattr(p.player_class, "value") else str(p.player_class),
+            rating=round(r.rating, 1), matches=r.matches_played,
+            championships=int(champ_counts.get(p.id, 0)),
+        )
+        for r, p in top_rating_rows
+    ]
+
+    # ---- Activity feed (matches recientes finalizados) ----
+    recent_matches = list(db.scalars(
+        select(MatchResult)
+        .where(MatchResult.reported_at.is_not(None))
+        .order_by(MatchResult.reported_at.desc())
+        .limit(15)
+    ))
+    activity: list[WarRoomActivity] = []
+    for m in recent_matches:
+        a = db.get(PlayerProfile, m.player_a_id)
+        b = db.get(PlayerProfile, m.player_b_id) if m.player_b_id else None
+        if m.is_bye:
+            summary = f"{a.alias if a else '?'} → BYE"
+        elif m.is_draw:
+            summary = f"{a.alias} vs {b.alias if b else '?'} · empate {m.games_a}-{m.games_b}"
+        else:
+            winner = a if m.winner_id == m.player_a_id else b
+            loser = b if m.winner_id == m.player_a_id else a
+            summary = (f"{winner.alias if winner else '?'} venció a "
+                       f"{loser.alias if loser else '?'} · {m.games_a}-{m.games_b}")
+        activity.append(WarRoomActivity(
+            timestamp=m.reported_at.isoformat() if m.reported_at else now.isoformat(),
+            type="match_result", summary=summary,
+        ))
+
+    # ---- Cosmos summary ----
+    cosmos_summary = {
+        "total_stars": db.scalar(select(func.count(PlayerProfile.id))) or 0,
+        "champion_count": db.scalar(
+            select(func.count(SeasonHistory.id)).where(SeasonHistory.final_position == 1)
+        ) or 0,
+        "edges": db.scalar(
+            select(func.count(func.distinct(
+                func.concat(MatchResult.player_a_id, ":", MatchResult.player_b_id)
+            )))
+        ) or 0,
+    }
+
+    return WarRoomOut(
+        tickers=tickers, meta=meta,
+        upcoming_events=upcoming_data,
+        top_players=top_players,
+        activity=activity,
+        cosmos_summary=cosmos_summary,
+    )
