@@ -87,6 +87,152 @@ def analyze_deck(deck_id: int, request: Request, db: DbDep, current: UserDep) ->
 # ============================== Guild weekly summary ==============================
 
 
+# ============================== Narrator (Cinematic Mode) ==============================
+
+
+NARRATOR_SYSTEM = """You are a passionate Esports commentator narrating a TCG tournament in real time, in Spanish (Chilean tone, energetic but professional).
+You receive a single event description and the current standings context.
+Respond with ONE dramatic, vivid sentence (10-25 words, no quotes, no markdown) suitable for text-to-speech.
+NEVER repeat the input verbatim. Add color and tension. Output ONLY the narration sentence."""
+
+
+class NarrateRequest(BaseModel):
+    event: dict  # {type: 'round_started'|'match_reported'|'event_finalized'|..., ...payload}
+    context: dict | None = None  # standings snapshot top 3 etc.
+
+
+class NarrateOut(BaseModel):
+    text: str
+
+
+@router.post("/narrate-event", response_model=NarrateOut)
+@limiter.limit("120/minute")
+def narrate_event(request: Request, payload: NarrateRequest) -> NarrateOut:
+    """Genera narración corta para un evento de torneo. Optimizado para TTS."""
+    import json as _json
+    parts = [f"Evento: {payload.event.get('type')}"]
+    for k, v in payload.event.items():
+        if k != "type":
+            parts.append(f"{k}={v}")
+    if payload.context:
+        parts.append("Contexto: " + _json.dumps(payload.context, ensure_ascii=False))
+    text = ai_chat.complete(
+        " · ".join(parts),
+        system=NARRATOR_SYSTEM,
+        max_tokens=120,
+    )
+    text = (text or "").strip().strip('"').strip()
+    return NarrateOut(text=text[:200])
+
+
+# ============================== Replay snapshots ==============================
+
+
+class ReplaySnapshot(BaseModel):
+    round_number: int
+    standings: list[dict]
+    matches: list[dict]
+
+
+class ReplayOut(BaseModel):
+    event_id: int
+    event_name: str
+    total_rounds: int
+    snapshots: list[ReplaySnapshot]
+
+
+@router.get("/events/{event_id}/replay", response_model=ReplayOut)
+def event_replay(event_id: int, db: DbDep) -> ReplayOut:
+    """Replay del evento: snapshot de standings después de cada ronda completada.
+
+    Reconstruimos los standings ronda por ronda iterando match_results en orden
+    y calculando match_points incrementales. No re-cacheamos: es offline-ish.
+    """
+    from app.models import MatchResult
+    from sqlalchemy import select as _s
+    ev = db.get(Event, event_id)
+    if not ev:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
+
+    matches = list(
+        db.scalars(_s(MatchResult).where(MatchResult.event_id == event_id)
+                    .order_by(MatchResult.round_number, MatchResult.table_number))
+    )
+    if not matches:
+        return ReplayOut(event_id=event_id, event_name=ev.name, total_rounds=0, snapshots=[])
+
+    # Pre-fetch aliases
+    from app.models import PlayerProfile as _P
+    pids = set()
+    for m in matches:
+        if m.player_a_id: pids.add(m.player_a_id)
+        if m.player_b_id: pids.add(m.player_b_id)
+    aliases = {
+        p.id: (p.alias, p.elite_id_code)
+        for p in db.scalars(_s(_P).where(_P.id.in_(pids)))
+    }
+
+    # Acumulador incremental
+    state: dict[int, dict] = {
+        pid: {
+            "player_id": pid, "alias": aliases[pid][0], "elite_id_code": aliases[pid][1],
+            "match_points": 0, "rounds_won": 0, "rounds_lost": 0, "rounds_draw": 0,
+            "games_won": 0, "games_lost": 0,
+        }
+        for pid in pids
+    }
+    snapshots: list[ReplaySnapshot] = []
+    rounds_seen: set[int] = set()
+    last_round = matches[-1].round_number
+
+    for m in matches:
+        a_id = m.player_a_id
+        b_id = m.player_b_id
+        if a_id in state:
+            state[a_id]["games_won"] += m.games_a
+            state[a_id]["games_lost"] += m.games_b
+        if b_id and b_id in state:
+            state[b_id]["games_won"] += m.games_b
+            state[b_id]["games_lost"] += m.games_a
+        if m.is_draw:
+            if a_id in state: state[a_id]["rounds_draw"] += 1; state[a_id]["match_points"] += 1
+            if b_id in state: state[b_id]["rounds_draw"] += 1; state[b_id]["match_points"] += 1
+        elif m.winner_id == a_id:
+            if a_id in state: state[a_id]["rounds_won"] += 1; state[a_id]["match_points"] += 3
+            if b_id in state: state[b_id]["rounds_lost"] += 1
+        elif m.winner_id == b_id:
+            if b_id in state: state[b_id]["rounds_won"] += 1; state[b_id]["match_points"] += 3
+            if a_id in state: state[a_id]["rounds_lost"] += 1
+
+        # Si esta es la última match de esta ronda, snapshot.
+        # Detección simple: cuando el próximo m tiene round_number distinto o termina la lista.
+        idx = matches.index(m)
+        is_last_of_round = idx == len(matches) - 1 or matches[idx + 1].round_number != m.round_number
+        if is_last_of_round and m.round_number not in rounds_seen:
+            rounds_seen.add(m.round_number)
+            ranked = sorted(state.values(), key=lambda x: x["match_points"], reverse=True)
+            for r_idx, row in enumerate(ranked, 1):
+                row["rank"] = r_idx
+            round_matches = [
+                {
+                    "table": mm.table_number, "player_a_id": mm.player_a_id, "player_b_id": mm.player_b_id,
+                    "winner_id": mm.winner_id, "games_a": mm.games_a, "games_b": mm.games_b,
+                    "is_bye": mm.is_bye, "is_draw": mm.is_draw,
+                }
+                for mm in matches if mm.round_number == m.round_number
+            ]
+            snapshots.append(ReplaySnapshot(
+                round_number=m.round_number,
+                standings=[{**row} for row in ranked[:16]],
+                matches=round_matches,
+            ))
+
+    return ReplayOut(
+        event_id=event_id, event_name=ev.name,
+        total_rounds=last_round, snapshots=snapshots,
+    )
+
+
 SUMMARY_SYSTEM = """You are an analytics assistant for a TCG community platform.
 You receive structured metrics about a 'Guild' (a local TCG store community) for the past 7 days.
 Write a friendly summary in Spanish (Chilean tone, but professional), 100-150 words, that:

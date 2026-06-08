@@ -1,4 +1,6 @@
 """FastAPI app entrypoint."""
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -13,7 +15,46 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
 from app.core.rate_limit import limiter
-from app.routers import activity, admin, admin_crud, ai, announcements, auth, catalog, checkin, decks, events, gamification, guilds, notifications, players, polls, rankings, referrals, reservations, seasons, streaks, uploads, wishlist
+from app.routers import activity, admin, admin_crud, ai, announcements, auth, catalog, checkin, decks, events, gamification, guilds, notifications, players, polls, rankings, ratings, realtime, referrals, reservations, search as search_router, seasons, streaks, tcg as tcg_router, uploads, wishlist
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Boot/shutdown hooks: FTS index, scheduler, etc."""
+    logger = logging.getLogger("app.lifespan")
+    # Search FTS5: instalar triggers + rebuild si es la primera vez.
+    try:
+        from app.services import search as search_svc
+        search_svc.install_triggers()
+        # Lazy init: solo rebuild si está vacío.
+        from sqlalchemy import text
+        from app.core.db import engine
+        with engine.connect() as conn:
+            try:
+                count = conn.execute(text("SELECT count(*) FROM search_index")).scalar() or 0
+            except Exception:
+                count = 0
+        if count == 0:
+            search_svc.rebuild_index()
+            logger.info("FTS index rebuilt on boot")
+    except Exception:
+        logger.exception("FTS boot failed (not fatal)")
+
+    # Scheduler.
+    try:
+        from app.services import scheduler as sched_svc
+        sched_svc.start()
+    except Exception:
+        logger.exception("scheduler start failed (not fatal)")
+
+    yield
+
+    # Shutdown.
+    try:
+        from app.services import scheduler as sched_svc
+        sched_svc.stop()
+    except Exception:
+        pass
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -41,6 +82,7 @@ app = FastAPI(
     title="EliteCards API",
     description="Plataforma TCG + RPG competitiva. Ruta del Campeón.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Orden de middlewares: ejecutan inverso al orden de add_middleware.
@@ -109,3 +151,9 @@ app.include_router(guilds.router, prefix="/api/guilds", tags=["guilds"])
 app.include_router(guilds.super_router, prefix="/api/super-admin", tags=["super-admin"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_crud.router, prefix="/api/admin", tags=["admin"])
+app.include_router(realtime.router, prefix="/api/rt", tags=["realtime"])
+app.include_router(tcg_router.router, prefix="/api/tcg", tags=["tcg"])
+app.include_router(ratings.router, prefix="/api/ratings", tags=["ratings"])
+app.include_router(ratings.bracket_router, prefix="/api", tags=["bracket"])
+app.include_router(search_router.router, prefix="/api", tags=["search"])
+app.include_router(search_router.admin_router, prefix="/api/admin", tags=["admin"])
