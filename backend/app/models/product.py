@@ -31,3 +31,13 @@ class Product(Base, TimestampMixin):
     per_player_limit: Mapped[int | None] = mapped_column(Integer)
     is_preorder: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Cupos por categoría para preventas. Por defecto 40 normales / 40 Elite / 20 Pro
+    # (split estándar de Calmar mencionado en el ROADMAP). Solo aplican si is_preorder.
+    preorder_slots_normal: Mapped[int] = mapped_column(Integer, nullable=False, default=40)
+    preorder_slots_elite: Mapped[int] = mapped_column(Integer, nullable=False, default=40)
+    preorder_slots_pro: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+
+    # True si el producto tiene ProductVariant. Cuando es true, el stock real
+    # vive en las variantes y `Product.stock` se ignora (queda como total cached).
+    has_variants: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

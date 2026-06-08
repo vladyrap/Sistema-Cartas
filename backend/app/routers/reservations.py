@@ -56,6 +56,7 @@ def create_my_reservation(payload: ReservationCreate, db: DbDep, current: UserDe
         db,
         player_id=current.profile.id,
         product_id=payload.product_id,
+        variant_id=getattr(payload, "variant_id", None),
         quantity=payload.quantity,
         note=payload.note,
     )

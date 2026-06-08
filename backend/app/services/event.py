@@ -14,6 +14,7 @@ from app.models import (
     EventStatus,
     EventType,
     PaymentStatus,
+    PlayerDeck,
 )
 from app.services import exp as exp_svc
 
@@ -59,8 +60,24 @@ def _slots_taken(db: Session, event_id: int) -> int:
 # ============================== Player actions ==============================
 
 
+def _validate_deck_for_event(
+    db: Session, *, deck_id: int, player_id: int, event: Event
+) -> PlayerDeck:
+    """Devuelve el deck si pertenece al jugador y es del juego del evento.
+    Lanza HTTPException si algo falla."""
+    deck = db.get(PlayerDeck, deck_id)
+    if not deck or deck.player_id != player_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Deck no encontrado")
+    if deck.game_id != event.game_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "El deck es de otro juego — no aplica para este evento",
+        )
+    return deck
+
+
 def register_player(
-    db: Session, *, event_id: int, player_id: int
+    db: Session, *, event_id: int, player_id: int, deck_id: int | None = None
 ) -> EventRegistration:
     ev = db.get(Event, event_id)
     if not ev:
@@ -81,9 +98,14 @@ def register_player(
     if _slots_taken(db, event_id) >= ev.slots:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Evento sin cupos disponibles")
 
+    # Deck check (opcional)
+    if deck_id is not None:
+        _validate_deck_for_event(db, deck_id=deck_id, player_id=player_id, event=ev)
+
     reg = EventRegistration(
         event_id=event_id,
         player_id=player_id,
+        deck_id=deck_id,
         payment_status=PaymentStatus.PENDING if ev.price_clp > 0 else PaymentStatus.PAID,
         attendance_status=AttendanceStatus.PENDING,
         registered_at=datetime.now(timezone.utc),
@@ -103,6 +125,61 @@ def register_player(
         pass
 
     return reg
+
+
+def assign_deck_to_registration(
+    db: Session, *, registration_id: int, deck_id: int | None, by_player_id: int
+) -> EventRegistration:
+    """Asocia (o desasocia con None) un deck a una inscripción existente.
+    No funciona si el deck ya está locked (evento empezado)."""
+    reg = db.get(EventRegistration, registration_id)
+    if not reg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Inscripción no encontrada")
+    if reg.player_id != by_player_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Esta inscripción no es tuya")
+    ev = db.get(Event, reg.event_id)
+    if ev and ev.status in (EventStatus.FINISHED, EventStatus.CLOSED, EventStatus.CANCELLED):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "El evento ya cerró — no puedes cambiar el deck.",
+        )
+    # Si tenía deck previo y estaba lockeado, desbloquearlo si ya no está en uso.
+    if reg.deck_id and reg.deck_id != deck_id:
+        prev = db.get(PlayerDeck, reg.deck_id)
+        if prev and prev.is_locked:
+            # Solo desbloqueamos si no hay otra inscripción activa con ese deck.
+            others = db.scalar(
+                select(func.count(EventRegistration.id)).where(
+                    EventRegistration.deck_id == prev.id,
+                    EventRegistration.id != reg.id,
+                )
+            ) or 0
+            if others == 0:
+                prev.is_locked = False
+    if deck_id is not None:
+        _validate_deck_for_event(db, deck_id=deck_id, player_id=by_player_id, event=ev)
+    reg.deck_id = deck_id
+    db.flush()
+    return reg
+
+
+def lock_decks_for_event(db: Session, *, event_id: int) -> int:
+    """Marca como locked todos los decks asociados a inscripciones de un evento.
+    Se llama cuando el admin cierra inscripciones (status → CLOSED) o cuando empieza."""
+    regs = db.scalars(
+        select(EventRegistration).where(
+            EventRegistration.event_id == event_id,
+            EventRegistration.deck_id.is_not(None),
+        )
+    )
+    count = 0
+    for reg in regs:
+        deck = db.get(PlayerDeck, reg.deck_id)
+        if deck and not deck.is_locked:
+            deck.is_locked = True
+            count += 1
+    db.flush()
+    return count
 
 
 def cancel_registration(

@@ -4,7 +4,10 @@ Import order matters for relationship resolution — keep it consistent.
 """
 from app.models.base import (
     AttendanceStatus,
+    BanlistStatus,
     Base,
+    CardCondition,
+    CardLanguage,
     EventStatus,
     EventType,
     GuildRole,
@@ -23,6 +26,9 @@ from app.models.guild_join_request import GuildJoinRequest, JoinRequestStatus
 from app.models.auth_token import AuthToken, AuthTokenKind
 from app.models.player import PlayerProfile
 from app.models.game import Game
+from app.models.game_format import GameFormat
+from app.models.game_set import GameSet
+from app.models.banlist_entry import BanlistEntry
 from app.models.season import Season
 from app.models.season_progress import SeasonProgress
 from app.models.season_history import SeasonHistory
@@ -35,6 +41,7 @@ from app.models.achievement import Achievement, PlayerAchievement, PlayerAchieve
 from app.models.title import Title, PlayerTitle
 from app.models.mission import Mission, PlayerMission
 from app.models.product import Product
+from app.models.product_variant import ProductVariant
 from app.models.reservation import Reservation
 from app.models.hall_of_fame import HallOfFameEntry
 from app.models.admin_action_log import AdminActionLog
@@ -45,6 +52,8 @@ from app.models.wishlist import ProductWishlist
 from app.models.referral import Referral, ReferralStatus
 from app.models.deck import PlayerDeck
 from app.models.poll import Poll, PollOption, PollVote
+from app.models.player_rating import PlayerRating
+from app.models.bracket import EventBracket, BracketNode
 
 __all__ = [
     "Base",
@@ -67,6 +76,10 @@ __all__ = [
     "User",
     "PlayerProfile",
     "Game",
+    "GameFormat",
+    "GameSet",
+    "BanlistEntry",
+    "BanlistStatus",
     "Season",
     "SeasonProgress",
     "SeasonHistory",
@@ -82,6 +95,9 @@ __all__ = [
     "Mission",
     "PlayerMission",
     "Product",
+    "ProductVariant",
+    "CardCondition",
+    "CardLanguage",
     "Reservation",
     "HallOfFameEntry",
     "AdminActionLog",
@@ -98,4 +114,7 @@ __all__ = [
     "Poll",
     "PollOption",
     "PollVote",
+    "PlayerRating",
+    "EventBracket",
+    "BracketNode",
 ]

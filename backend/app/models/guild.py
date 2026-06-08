@@ -28,6 +28,12 @@ class Guild(Base, TimestampMixin):
     )
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # MercadoPago: cada Gremio tiene su propia cuenta MP (cada tienda cobra a su nombre).
+    # IMPORTANTE: este token es sensible. NO se devuelve en GuildOut público, solo
+    # en endpoints scoped al GUILD_ADMIN/SUPER_ADMIN.
+    mp_access_token: Mapped[str | None] = mapped_column(String(255))
+    mp_public_key: Mapped[str | None] = mapped_column(String(120))
+
 
 class GuildMembership(Base, TimestampMixin):
     """Relación usuario ↔ Gremio con rol específico."""

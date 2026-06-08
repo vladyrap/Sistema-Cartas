@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 
 from app.core.deps import DbDep, GuildContext, get_current_user
-from app.models import Product, ProductAccess, User
-from app.schemas.common import ProductEligibilityOut, ProductOut
+from app.models import CardCondition, CardLanguage, Product, ProductAccess, ProductVariant, User
+from app.schemas.common import ProductEligibilityOut, ProductOut, ProductVariantOut
 from app.services.reservation import _player_current_level, validate_reservation_request
 from app.services.reservation import ReservationError
 
@@ -51,6 +51,45 @@ def list_products(
         stmt = stmt.where(Product.is_preorder.is_(preorder))
     stmt = stmt.order_by(Product.is_preorder.desc(), Product.required_level, Product.name)
     return [_serialize(p) for p in db.scalars(stmt)]
+
+
+def _variant_to_out(v: ProductVariant) -> ProductVariantOut:
+    return ProductVariantOut(
+        id=v.id, product_id=v.product_id, sku=v.sku,
+        set_id=v.set_id, collector_number=v.collector_number,
+        condition=v.condition, is_foil=v.is_foil, language=v.language,
+        price_clp=int(v.price_clp) if v.price_clp is not None else None,
+        stock=v.stock, image_url=v.image_url, is_active=v.is_active,
+    )
+
+
+@router.get("/{product_id}/variants", response_model=list[ProductVariantOut])
+def list_variants_public(
+    product_id: int,
+    db: DbDep,
+    condition: CardCondition | None = Query(default=None),
+    language: CardLanguage | None = Query(default=None),
+    is_foil: bool | None = Query(default=None),
+    set_id: int | None = Query(default=None),
+    in_stock: bool = Query(default=True),
+) -> list[ProductVariantOut]:
+    """Variantes (SKU) de un producto, filtrable por condition/foil/idioma/set."""
+    stmt = select(ProductVariant).where(
+        ProductVariant.product_id == product_id,
+        ProductVariant.is_active.is_(True),
+    )
+    if condition is not None:
+        stmt = stmt.where(ProductVariant.condition == condition)
+    if language is not None:
+        stmt = stmt.where(ProductVariant.language == language)
+    if is_foil is not None:
+        stmt = stmt.where(ProductVariant.is_foil.is_(is_foil))
+    if set_id is not None:
+        stmt = stmt.where(ProductVariant.set_id == set_id)
+    if in_stock:
+        stmt = stmt.where(ProductVariant.stock > 0)
+    stmt = stmt.order_by(ProductVariant.condition, ProductVariant.price_clp.asc().nulls_last())
+    return [_variant_to_out(v) for v in db.scalars(stmt)]
 
 
 @router.get("/eligibility", response_model=list[ProductEligibilityOut])

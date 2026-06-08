@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import AttendanceStatus, Base, PaymentStatus, TimestampMixin
@@ -19,6 +19,11 @@ class EventRegistration(Base, TimestampMixin):
     player_id: Mapped[int] = mapped_column(
         ForeignKey("player_profiles.id"), nullable=False, index=True
     )
+    # Deck que el jugador trae al evento. Opcional al inscribirse (lo puede
+    # asociar después). Una vez que el evento empieza, el deck queda locked.
+    deck_id: Mapped[int | None] = mapped_column(
+        ForeignKey("player_decks.id", ondelete="SET NULL"), index=True
+    )
 
     payment_status: Mapped[PaymentStatus] = mapped_column(
         Enum(PaymentStatus, name="payment_status"), default=PaymentStatus.PENDING, nullable=False
@@ -33,5 +38,14 @@ class EventRegistration(Base, TimestampMixin):
     final_position: Mapped[int | None] = mapped_column(Integer)
     rounds_won: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     rounds_lost: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    rounds_draw: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Game wins / losses (para tiebreaker GW%).
+    games_won: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    games_lost: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Match points cacheados (3 por win, 1 por draw, 0 por loss).
+    match_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Si el jugador droppea, deja de generar pairings.
+    dropped: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dropped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

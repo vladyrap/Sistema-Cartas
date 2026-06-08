@@ -10,13 +10,17 @@ from app.core.security import hash_password
 from app.models import (
     Achievement,
     AttendanceStatus,
+    BanlistEntry,
     Event,
     EventRegistration,
     Game,
+    GameFormat,
+    GameSet,
     Mission,
     PaymentStatus,
     PlayerProfile,
     Product,
+    ProductVariant,
     Reservation,
     ReservationStatus,
     Season,
@@ -28,11 +32,20 @@ from app.schemas.common import (
     AchievementCreate,
     AchievementOut,
     AchievementUpdate,
+    BanlistEntryCreate,
+    BanlistEntryOut,
+    BanlistEntryUpdate,
     EventCreate,
     EventOut,
     EventUpdate,
     GameCreate,
+    GameFormatCreate,
+    GameFormatOut,
+    GameFormatUpdate,
     GameOut,
+    GameSetCreate,
+    GameSetOut,
+    GameSetUpdate,
     GameUpdate,
     MissionCreate,
     MissionOut,
@@ -42,8 +55,12 @@ from app.schemas.common import (
     ProductCreate,
     ProductOut,
     ProductUpdate,
+    ProductVariantCreate,
+    ProductVariantOut,
+    ProductVariantUpdate,
     UserAdminUpdate,
 )
+from app.services.tcg import normalize_card_name
 
 
 router = APIRouter()
@@ -492,6 +509,368 @@ def admin_update_player_profile(
             lv = sp.level
             rk = sp.current_rank.value if hasattr(sp.current_rank, "value") else sp.current_rank
     return _player_full(player, user, lv, rk)
+
+
+# ============================== Game Formats ==============================
+
+
+@router.get("/games/{game_id}/formats", response_model=list[GameFormatOut])
+def list_game_formats(game_id: int, db: DbDep, admin: AdminDep) -> list[GameFormat]:
+    if not db.get(Game, game_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Juego no encontrado")
+    return list(
+        db.scalars(
+            select(GameFormat)
+            .where(GameFormat.game_id == game_id)
+            .order_by(GameFormat.sort_order, GameFormat.name)
+        )
+    )
+
+
+@router.post("/game-formats", response_model=GameFormatOut, status_code=201)
+def create_game_format(payload: GameFormatCreate, db: DbDep, admin: AdminDep) -> GameFormat:
+    if not db.get(Game, payload.game_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Juego no encontrado")
+    if db.scalar(
+        select(GameFormat).where(
+            GameFormat.game_id == payload.game_id, GameFormat.code == payload.code
+        )
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe ese formato para este juego")
+    f = GameFormat(**payload.model_dump())
+    db.add(f)
+    db.flush()
+    audit.log(
+        db, admin_id=admin.id, action="game_format.create", guild_id=None,
+        target_kind="game_format", target_id=f.id, payload={"name": f.name, "game_id": f.game_id},
+    )
+    db.commit()
+    db.refresh(f)
+    return f
+
+
+@router.patch("/game-formats/{format_id}", response_model=GameFormatOut)
+def update_game_format(
+    format_id: int, payload: GameFormatUpdate, db: DbDep, admin: AdminDep
+) -> GameFormat:
+    f = db.get(GameFormat, format_id)
+    if not f:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Formato no encontrado")
+    changes = payload.model_dump(exclude_unset=True)
+    if "code" in changes and changes["code"] != f.code:
+        if db.scalar(
+            select(GameFormat).where(
+                GameFormat.game_id == f.game_id, GameFormat.code == changes["code"]
+            )
+        ):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Ese código ya existe en este juego")
+    for k, v in changes.items():
+        setattr(f, k, v)
+    audit.log(
+        db, admin_id=admin.id, action="game_format.update", guild_id=None,
+        target_kind="game_format", target_id=f.id, payload={"fields": list(changes.keys())},
+    )
+    db.commit()
+    db.refresh(f)
+    return f
+
+
+@router.delete("/game-formats/{format_id}", status_code=204)
+def delete_game_format(format_id: int, db: DbDep, admin: AdminDep):
+    f = db.get(GameFormat, format_id)
+    if not f:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Formato no encontrado")
+    audit.log(
+        db, admin_id=admin.id, action="game_format.delete", guild_id=None,
+        target_kind="game_format", target_id=f.id, payload={"name": f.name},
+    )
+    db.delete(f)
+    db.commit()
+
+
+# ============================== Game Sets ==============================
+
+
+@router.get("/games/{game_id}/sets", response_model=list[GameSetOut])
+def list_game_sets(game_id: int, db: DbDep, admin: AdminDep) -> list[GameSet]:
+    if not db.get(Game, game_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Juego no encontrado")
+    return list(
+        db.scalars(
+            select(GameSet)
+            .where(GameSet.game_id == game_id)
+            .order_by(GameSet.released_at.desc().nulls_last(), GameSet.name)
+        )
+    )
+
+
+@router.post("/game-sets", response_model=GameSetOut, status_code=201)
+def create_game_set(payload: GameSetCreate, db: DbDep, admin: AdminDep) -> GameSet:
+    if not db.get(Game, payload.game_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Juego no encontrado")
+    if db.scalar(
+        select(GameSet).where(
+            GameSet.game_id == payload.game_id, GameSet.code == payload.code
+        )
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe ese set para este juego")
+    s = GameSet(**payload.model_dump())
+    db.add(s)
+    db.flush()
+    audit.log(
+        db, admin_id=admin.id, action="game_set.create", guild_id=None,
+        target_kind="game_set", target_id=s.id, payload={"name": s.name, "code": s.code},
+    )
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+@router.patch("/game-sets/{set_id}", response_model=GameSetOut)
+def update_game_set(set_id: int, payload: GameSetUpdate, db: DbDep, admin: AdminDep) -> GameSet:
+    s = db.get(GameSet, set_id)
+    if not s:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Set no encontrado")
+    changes = payload.model_dump(exclude_unset=True)
+    if "code" in changes and changes["code"] != s.code:
+        if db.scalar(
+            select(GameSet).where(GameSet.game_id == s.game_id, GameSet.code == changes["code"])
+        ):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Ese código ya existe en este juego")
+    for k, v in changes.items():
+        setattr(s, k, v)
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+@router.delete("/game-sets/{set_id}", status_code=204)
+def delete_game_set(set_id: int, db: DbDep, admin: AdminDep):
+    s = db.get(GameSet, set_id)
+    if not s:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Set no encontrado")
+    db.delete(s)
+    db.commit()
+
+
+# ============================== Banlist ==============================
+
+
+@router.get("/game-formats/{format_id}/banlist", response_model=list[BanlistEntryOut])
+def list_banlist(format_id: int, db: DbDep, admin: AdminDep) -> list[BanlistEntry]:
+    if not db.get(GameFormat, format_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Formato no encontrado")
+    return list(
+        db.scalars(
+            select(BanlistEntry)
+            .where(BanlistEntry.format_id == format_id)
+            .order_by(BanlistEntry.status, BanlistEntry.card_name)
+        )
+    )
+
+
+@router.post("/banlist-entries", response_model=BanlistEntryOut, status_code=201)
+def create_banlist_entry(
+    payload: BanlistEntryCreate, db: DbDep, admin: AdminDep
+) -> BanlistEntry:
+    if not db.get(GameFormat, payload.format_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Formato no encontrado")
+    norm = normalize_card_name(payload.card_name)
+    if not norm:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nombre de carta vacío")
+    if db.scalar(
+        select(BanlistEntry).where(
+            BanlistEntry.format_id == payload.format_id,
+            BanlistEntry.card_name_norm == norm,
+        )
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Esa carta ya está en la banlist")
+    b = BanlistEntry(
+        format_id=payload.format_id,
+        card_name=payload.card_name.strip(),
+        card_name_norm=norm,
+        status=payload.status,
+        notes=payload.notes,
+    )
+    db.add(b)
+    db.flush()
+    audit.log(
+        db, admin_id=admin.id, action="banlist.create", guild_id=None,
+        target_kind="banlist_entry", target_id=b.id,
+        payload={"card": b.card_name, "format_id": b.format_id, "status": b.status.value},
+    )
+    db.commit()
+    db.refresh(b)
+    return b
+
+
+@router.patch("/banlist-entries/{entry_id}", response_model=BanlistEntryOut)
+def update_banlist_entry(
+    entry_id: int, payload: BanlistEntryUpdate, db: DbDep, admin: AdminDep
+) -> BanlistEntry:
+    b = db.get(BanlistEntry, entry_id)
+    if not b:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Entrada no encontrada")
+    changes = payload.model_dump(exclude_unset=True)
+    if "card_name" in changes and changes["card_name"]:
+        new_norm = normalize_card_name(changes["card_name"])
+        if new_norm != b.card_name_norm:
+            dup = db.scalar(
+                select(BanlistEntry).where(
+                    BanlistEntry.format_id == b.format_id,
+                    BanlistEntry.card_name_norm == new_norm,
+                    BanlistEntry.id != b.id,
+                )
+            )
+            if dup:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, "Esa carta ya está en la banlist"
+                )
+            b.card_name_norm = new_norm
+        b.card_name = changes["card_name"].strip()
+        changes.pop("card_name", None)
+    for k, v in changes.items():
+        setattr(b, k, v)
+    db.commit()
+    db.refresh(b)
+    return b
+
+
+@router.delete("/banlist-entries/{entry_id}", status_code=204)
+def delete_banlist_entry(entry_id: int, db: DbDep, admin: AdminDep):
+    b = db.get(BanlistEntry, entry_id)
+    if not b:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Entrada no encontrada")
+    db.delete(b)
+    db.commit()
+
+
+# ============================== Product Variants (SKU singles) ==============================
+
+
+def _variant_to_out(v: ProductVariant) -> ProductVariantOut:
+    return ProductVariantOut(
+        id=v.id, product_id=v.product_id, sku=v.sku,
+        set_id=v.set_id, collector_number=v.collector_number,
+        condition=v.condition, is_foil=v.is_foil, language=v.language,
+        price_clp=int(v.price_clp) if v.price_clp is not None else None,
+        stock=v.stock, image_url=v.image_url, is_active=v.is_active,
+    )
+
+
+def _refresh_product_has_variants(db, product_id: int) -> None:
+    """Marca Product.has_variants en función de si tiene variantes activas."""
+    p = db.get(Product, product_id)
+    if not p:
+        return
+    n = db.scalar(
+        select(func.count(ProductVariant.id)).where(ProductVariant.product_id == product_id)
+    ) or 0
+    p.has_variants = bool(n)
+
+
+@router.get("/products/{product_id}/variants", response_model=list[ProductVariantOut])
+def list_variants(
+    product_id: int, db: DbDep, admin: ScopedAdminDep, guild: GuildContext,
+) -> list[ProductVariantOut]:
+    p = db.get(Product, product_id)
+    if not p or (guild is not None and p.guild_id != guild.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Producto no encontrado")
+    rows = list(
+        db.scalars(
+            select(ProductVariant)
+            .where(ProductVariant.product_id == product_id)
+            .order_by(ProductVariant.is_active.desc(), ProductVariant.sku)
+        )
+    )
+    return [_variant_to_out(v) for v in rows]
+
+
+@router.post("/product-variants", response_model=ProductVariantOut, status_code=201)
+def create_variant(
+    payload: ProductVariantCreate, db: DbDep, admin: ScopedAdminDep, guild: GuildContext,
+) -> ProductVariantOut:
+    p = db.get(Product, payload.product_id)
+    if not p or (guild is not None and p.guild_id != guild.id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Producto no encontrado")
+    if db.scalar(select(ProductVariant).where(ProductVariant.sku == payload.sku)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "SKU ya existe")
+    from decimal import Decimal
+    data = payload.model_dump()
+    if data.get("price_clp") is not None:
+        data["price_clp"] = Decimal(data["price_clp"])
+    v = ProductVariant(**data)
+    db.add(v)
+    db.flush()
+    _refresh_product_has_variants(db, payload.product_id)
+    audit.log(
+        db, admin_id=admin.id, action="product_variant.create", guild_id=p.guild_id,
+        target_kind="product_variant", target_id=v.id,
+        payload={"sku": v.sku, "product_id": v.product_id},
+    )
+    db.commit()
+    db.refresh(v)
+    return _variant_to_out(v)
+
+
+@router.patch("/product-variants/{variant_id}", response_model=ProductVariantOut)
+def update_variant(
+    variant_id: int, payload: ProductVariantUpdate,
+    db: DbDep, admin: ScopedAdminDep, guild: GuildContext,
+) -> ProductVariantOut:
+    v = db.get(ProductVariant, variant_id)
+    if not v:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Variante no encontrada")
+    p = db.get(Product, v.product_id)
+    if not p or (guild is not None and p.guild_id != guild.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Variante no encontrada")
+    changes = payload.model_dump(exclude_unset=True)
+    if "sku" in changes and changes["sku"] != v.sku:
+        if db.scalar(
+            select(ProductVariant).where(
+                ProductVariant.sku == changes["sku"], ProductVariant.id != v.id
+            )
+        ):
+            raise HTTPException(status.HTTP_409_CONFLICT, "SKU ya existe")
+    if "price_clp" in changes and changes["price_clp"] is not None:
+        from decimal import Decimal
+        changes["price_clp"] = Decimal(changes["price_clp"])
+    for k, val in changes.items():
+        setattr(v, k, val)
+    db.commit()
+    db.refresh(v)
+    return _variant_to_out(v)
+
+
+@router.delete("/product-variants/{variant_id}", status_code=204)
+def delete_variant(
+    variant_id: int, db: DbDep, admin: ScopedAdminDep, guild: GuildContext,
+):
+    v = db.get(ProductVariant, variant_id)
+    if not v:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Variante no encontrada")
+    p = db.get(Product, v.product_id)
+    if not p or (guild is not None and p.guild_id != guild.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Variante no encontrada")
+    # Bloquear si tiene reservas activas.
+    has_res = db.scalar(
+        select(Reservation).where(
+            Reservation.variant_id == variant_id,
+            Reservation.status.in_([
+                ReservationStatus.PENDING, ReservationStatus.APPROVED, ReservationStatus.PAID,
+            ]),
+        )
+    )
+    if has_res:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Variante con reservas activas — desactívala en su lugar.",
+        )
+    product_id = v.product_id
+    db.delete(v)
+    db.flush()
+    _refresh_product_has_variants(db, product_id)
+    db.commit()
 
 
 @router.patch("/players/{player_id}/user", response_model=PlayerFullOut)

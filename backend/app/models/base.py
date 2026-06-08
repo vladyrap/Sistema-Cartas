@@ -125,3 +125,40 @@ class RankName(str, enum.Enum):
     def is_top_tier(cls, rank: "RankName") -> bool:
         """True si el rango cualifica para el inicio promovido (Duelista N10)."""
         return rank in (cls.MAESTRO, cls.CAMPEON)
+
+
+class CardCondition(str, enum.Enum):
+    """Estado físico de una carta (estándar TCGPlayer / Cardmarket)."""
+    NM = "NM"      # Near Mint
+    LP = "LP"      # Lightly Played
+    MP = "MP"      # Moderately Played
+    HP = "HP"      # Heavily Played
+    DMG = "DMG"    # Damaged
+    SEALED = "SEALED"  # Para sobres/boxes sellados
+
+
+class CardLanguage(str, enum.Enum):
+    ES = "ES"
+    EN = "EN"
+    JP = "JP"
+    PT = "PT"
+    FR = "FR"
+    DE = "DE"
+    KR = "KR"
+    ZH = "ZH"
+
+
+class BanlistStatus(str, enum.Enum):
+    """Estado de una carta en la banlist de un formato.
+
+    - BANNED: prohibida (0 copias).
+    - RESTRICTED: solo 1 copia permitida (común en MTG Vintage).
+    - LIMITED: 1 copia en Yu-Gi-Oh!.
+    - SEMI_LIMITED: 2 copias en Yu-Gi-Oh!.
+    - WATCHLIST: bajo observación, todavía legal.
+    """
+    BANNED = "BANNED"
+    RESTRICTED = "RESTRICTED"
+    LIMITED = "LIMITED"
+    SEMI_LIMITED = "SEMI_LIMITED"
+    WATCHLIST = "WATCHLIST"

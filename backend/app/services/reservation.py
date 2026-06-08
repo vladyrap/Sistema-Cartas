@@ -31,6 +31,7 @@ from app.models import (
     PlayerProfile,
     Product,
     ProductAccess,
+    ProductVariant,
     Reservation,
     ReservationStatus,
     Season,
@@ -60,8 +61,68 @@ def _player_current_level(db: Session, player_id: int) -> int:
     return sp.level if sp else 0
 
 
+def _preorder_slot_used_for_access(
+    db: Session, *, product_id: int, access: ProductAccess
+) -> int:
+    """Cuenta reservas vivas (PENDING/APPROVED/PAID) de jugadores en un nivel de access."""
+    # Implementación simple: cuenta reservas con `access` del producto. En esta
+    # versión solo nos importa el bucket NORMAL vs ELITE (Access o Pro). Si el
+    # producto requiere nivel 25+, el bucket es PRO; si 15+, ELITE; sino NORMAL.
+    # Aproximación: usamos el nivel del jugador al reservar para asignar bucket
+    # — para no romper modelo, contamos por todas las reservas vivas del producto
+    # y dejamos que el admin ajuste cupos manualmente. Esta función queda como
+    # extensión futura cuando bucketizemos por player_level.
+    return db.scalar(
+        select(func.coalesce(func.sum(Reservation.quantity), 0)).where(
+            Reservation.product_id == product_id,
+            Reservation.status.in_([
+                ReservationStatus.PENDING,
+                ReservationStatus.APPROVED,
+                ReservationStatus.PAID,
+            ]),
+        )
+    ) or 0
+
+
+def _bucket_for_level(level: int) -> str:
+    """Asigna bucket de cupo preventa según nivel del jugador."""
+    if level >= 25:
+        return "pro"
+    if level >= 15:
+        return "elite"
+    return "normal"
+
+
+def _preorder_used_per_bucket(
+    db: Session, *, product_id: int
+) -> dict[str, int]:
+    """Cuenta reservas vivas agrupando jugadores por bucket de nivel.
+
+    Recorre las reservas vivas y mira el nivel actual del jugador. Es O(n) en
+    cantidad de reservas — aceptable porque las preventas tienen cupos chicos.
+    """
+    used = {"normal": 0, "elite": 0, "pro": 0}
+    rows = list(
+        db.scalars(
+            select(Reservation).where(
+                Reservation.product_id == product_id,
+                Reservation.status.in_([
+                    ReservationStatus.PENDING,
+                    ReservationStatus.APPROVED,
+                    ReservationStatus.PAID,
+                ]),
+            )
+        )
+    )
+    for r in rows:
+        lv = _player_current_level(db, r.player_id)
+        used[_bucket_for_level(lv)] += r.quantity
+    return used
+
+
 def validate_reservation_request(
-    db: Session, *, player_id: int, product_id: int, quantity: int
+    db: Session, *, player_id: int, product_id: int, quantity: int,
+    variant_id: int | None = None,
 ) -> Product:
     """Aplica todas las validaciones de negocio. Devuelve el Product si OK.
 
@@ -74,8 +135,22 @@ def validate_reservation_request(
     if not product or not product.is_active:
         raise ReservationError("Producto no disponible")
 
-    if product.stock < quantity:
-        raise ReservationError(f"Stock insuficiente: quedan {product.stock} unidades")
+    # Variantes: si el producto tiene variantes, exigimos variant_id; el stock
+    # se valida contra la variante específica.
+    variant: ProductVariant | None = None
+    if product.has_variants:
+        if variant_id is None:
+            raise ReservationError("Este producto requiere seleccionar variante (SKU)")
+        variant = db.get(ProductVariant, variant_id)
+        if not variant or variant.product_id != product.id or not variant.is_active:
+            raise ReservationError("Variante no disponible")
+        if variant.stock < quantity:
+            raise ReservationError(f"Stock insuficiente: quedan {variant.stock} unidades")
+    else:
+        if variant_id is not None:
+            raise ReservationError("Este producto no tiene variantes")
+        if product.stock < quantity:
+            raise ReservationError(f"Stock insuficiente: quedan {product.stock} unidades")
 
     # Validar nivel del jugador
     player_level = _player_current_level(db, player_id)
@@ -90,6 +165,23 @@ def validate_reservation_request(
         raise ReservationError("Catálogo Elite Pro requiere alcanzar nivel 25 esta temporada")
     if product.access == ProductAccess.ELITE_ACCESS and player_level < 15:
         raise ReservationError("Elite Access requiere alcanzar nivel 15 esta temporada")
+
+    # Validar cupos de preventa por bucket de nivel (40 normal / 40 elite / 20 pro
+    # por defecto, configurable en el producto).
+    if product.is_preorder:
+        used = _preorder_used_per_bucket(db, product_id=product_id)
+        bucket = _bucket_for_level(player_level)
+        slot_total = {
+            "normal": product.preorder_slots_normal,
+            "elite": product.preorder_slots_elite,
+            "pro": product.preorder_slots_pro,
+        }[bucket]
+        if used[bucket] + quantity > slot_total:
+            remaining = max(0, slot_total - used[bucket])
+            raise ReservationError(
+                f"Cupos de preventa para tu nivel ({bucket.upper()}) agotados — "
+                f"quedan {remaining} de {slot_total}."
+            )
 
     # Validar límite por jugador
     if product.per_player_limit is not None:
@@ -117,7 +209,8 @@ def validate_reservation_request(
 
 
 def create_reservation(
-    db: Session, *, player_id: int, product_id: int, quantity: int = 1, note: str | None = None
+    db: Session, *, player_id: int, product_id: int, quantity: int = 1,
+    note: str | None = None, variant_id: int | None = None,
 ) -> Reservation:
     """Crea una reserva PENDIENTE, descontando stock al instante.
 
@@ -126,17 +219,25 @@ def create_reservation(
     """
     try:
         product = validate_reservation_request(
-            db, player_id=player_id, product_id=product_id, quantity=quantity
+            db, player_id=player_id, product_id=product_id, quantity=quantity,
+            variant_id=variant_id,
         )
     except ReservationError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
-    product.stock -= quantity
+    # Decrementar stock: si hay variante, de la variante; sino del producto.
+    if variant_id is not None:
+        variant = db.get(ProductVariant, variant_id)
+        if variant:
+            variant.stock -= quantity
+    else:
+        product.stock -= quantity
 
     expires_at = datetime.now(timezone.utc) + timedelta(hours=DEFAULT_EXPIRATION_HOURS)
     reservation = Reservation(
         player_id=player_id,
         product_id=product_id,
+        variant_id=variant_id,
         quantity=quantity,
         status=ReservationStatus.PENDING,
         expires_at=expires_at,
@@ -156,7 +257,12 @@ def create_reservation(
 
 
 def _restock(db: Session, reservation: Reservation) -> None:
-    """Devuelve el stock al producto. Solo si la reserva estaba ocupando stock."""
+    """Devuelve el stock al producto/variante. Solo si la reserva estaba ocupando stock."""
+    if reservation.variant_id is not None:
+        variant = db.get(ProductVariant, reservation.variant_id)
+        if variant is not None:
+            variant.stock += reservation.quantity
+            return
     product = db.get(Product, reservation.product_id)
     if product is not None:
         product.stock += reservation.quantity

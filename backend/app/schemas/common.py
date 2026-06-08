@@ -3,6 +3,9 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.base import (
+    BanlistStatus,
+    CardCondition,
+    CardLanguage,
     EventStatus,
     EventType,
     GuildRole,
@@ -200,11 +203,17 @@ class EventRegistrationOut(BaseModel):
     id: int
     event_id: int
     player_id: int
+    deck_id: int | None = None
     payment_status: str
     attendance_status: str
     final_position: int | None = None
     rounds_won: int
     rounds_lost: int
+    rounds_draw: int = 0
+    games_won: int = 0
+    games_lost: int = 0
+    match_points: int = 0
+    dropped: bool = False
 
 
 class EventRegistrationWithPlayer(BaseModel):
@@ -415,6 +424,7 @@ class ProductEligibilityOut(BaseModel):
 
 class ReservationCreate(BaseModel):
     product_id: int
+    variant_id: int | None = None
     quantity: int = Field(default=1, ge=1, le=10)
     note: str | None = None
 
@@ -424,6 +434,7 @@ class ReservationOut(BaseModel):
     id: int
     player_id: int
     product_id: int
+    variant_id: int | None = None
     quantity: int
     status: ReservationStatus
     expires_at: datetime | None = None
@@ -748,6 +759,12 @@ class WishlistItemOut(BaseModel):
     created_at: datetime
 
 
+class CreatePaymentOut(BaseModel):
+    init_point: str
+    preference_id: str
+    mock: bool = False
+
+
 class CheckinResolveOut(BaseModel):
     player_id: int
     alias: str
@@ -880,3 +897,166 @@ class PublicProfileOut(BaseModel):
     season_count: int
     achievements: list[PlayerAchievementOut] = []
     history: list[SeasonHistoryOut] = []
+
+
+# ============================== TCG: Game Formats / Sets / Banlist ==============================
+
+
+class GameFormatOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    game_id: int
+    code: str
+    name: str
+    description: str | None = None
+    min_main: int
+    max_main: int | None = None
+    min_side: int
+    max_side: int
+    min_extra: int
+    max_extra: int
+    max_copies: int
+    has_leader: bool
+    is_singleton: bool
+    is_rotating: bool
+    rotation_at: datetime | None = None
+    is_active: bool
+    sort_order: int
+
+
+class GameFormatCreate(BaseModel):
+    game_id: int
+    code: str = Field(min_length=2, max_length=40)
+    name: str = Field(min_length=2, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    min_main: int = Field(default=60, ge=1, le=400)
+    max_main: int | None = Field(default=None, ge=1, le=400)
+    min_side: int = Field(default=0, ge=0, le=30)
+    max_side: int = Field(default=15, ge=0, le=30)
+    min_extra: int = Field(default=0, ge=0, le=30)
+    max_extra: int = Field(default=0, ge=0, le=30)
+    max_copies: int = Field(default=4, ge=1, le=99)
+    has_leader: bool = False
+    is_singleton: bool = False
+    is_rotating: bool = False
+    rotation_at: datetime | None = None
+    is_active: bool = True
+    sort_order: int = 100
+
+
+class GameFormatUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=2, max_length=40)
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    min_main: int | None = Field(default=None, ge=1, le=400)
+    max_main: int | None = Field(default=None, ge=1, le=400)
+    min_side: int | None = Field(default=None, ge=0, le=30)
+    max_side: int | None = Field(default=None, ge=0, le=30)
+    min_extra: int | None = Field(default=None, ge=0, le=30)
+    max_extra: int | None = Field(default=None, ge=0, le=30)
+    max_copies: int | None = Field(default=None, ge=1, le=99)
+    has_leader: bool | None = None
+    is_singleton: bool | None = None
+    is_rotating: bool | None = None
+    rotation_at: datetime | None = None
+    is_active: bool | None = None
+    sort_order: int | None = None
+
+
+class GameSetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    game_id: int
+    code: str
+    name: str
+    released_at: datetime | None = None
+    total_cards: int | None = None
+    rotates_out_at: datetime | None = None
+    is_active: bool
+
+
+class GameSetCreate(BaseModel):
+    game_id: int
+    code: str = Field(min_length=1, max_length=20)
+    name: str = Field(min_length=1, max_length=160)
+    released_at: datetime | None = None
+    total_cards: int | None = Field(default=None, ge=0, le=2000)
+    rotates_out_at: datetime | None = None
+    is_active: bool = True
+
+
+class GameSetUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=20)
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    released_at: datetime | None = None
+    total_cards: int | None = Field(default=None, ge=0, le=2000)
+    rotates_out_at: datetime | None = None
+    is_active: bool | None = None
+
+
+class BanlistEntryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    format_id: int
+    card_name: str
+    status: BanlistStatus
+    notes: str | None = None
+
+
+class BanlistEntryCreate(BaseModel):
+    format_id: int
+    card_name: str = Field(min_length=1, max_length=160)
+    status: BanlistStatus = BanlistStatus.BANNED
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class BanlistEntryUpdate(BaseModel):
+    card_name: str | None = Field(default=None, min_length=1, max_length=160)
+    status: BanlistStatus | None = None
+    notes: str | None = Field(default=None, max_length=500)
+
+
+# ============================== TCG: Product Variants ==============================
+
+
+class ProductVariantOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: int
+    sku: str
+    set_id: int | None = None
+    collector_number: str | None = None
+    condition: CardCondition
+    is_foil: bool
+    language: CardLanguage
+    price_clp: int | None = None
+    stock: int
+    image_url: str | None = None
+    is_active: bool
+
+
+class ProductVariantCreate(BaseModel):
+    product_id: int
+    sku: str = Field(min_length=1, max_length=60)
+    set_id: int | None = None
+    collector_number: str | None = Field(default=None, max_length=20)
+    condition: CardCondition = CardCondition.NM
+    is_foil: bool = False
+    language: CardLanguage = CardLanguage.ES
+    price_clp: int | None = Field(default=None, ge=0)
+    stock: int = Field(default=0, ge=0)
+    image_url: str | None = Field(default=None, max_length=500)
+    is_active: bool = True
+
+
+class ProductVariantUpdate(BaseModel):
+    sku: str | None = Field(default=None, min_length=1, max_length=60)
+    set_id: int | None = None
+    collector_number: str | None = Field(default=None, max_length=20)
+    condition: CardCondition | None = None
+    is_foil: bool | None = None
+    language: CardLanguage | None = None
+    price_clp: int | None = Field(default=None, ge=0)
+    stock: int | None = Field(default=None, ge=0)
+    image_url: str | None = Field(default=None, max_length=500)
+    is_active: bool | None = None

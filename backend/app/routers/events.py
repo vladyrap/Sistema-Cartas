@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from app.core.deps import DbDep, GuildContext, UserDep, get_current_user
-from app.models import Event, EventRegistration, Game, User
-from app.schemas.common import EventOut, EventRegistrationOut, GameOut
+from app.core.deps import AdminDep, DbDep, GuildContext, UserDep, get_current_user
+from app.models import Event, EventRegistration, EventStatus, Game, GameFormat, GameSet, MatchResult, PlayerProfile, User
+from app.schemas.common import EventOut, EventRegistrationOut, GameFormatOut, GameOut, GameSetOut
 from app.services import event as event_svc
+from app.services import tournament as tour_svc
 
 router = APIRouter()
 
@@ -86,11 +88,39 @@ def get_event_with_me(event_id: int, db: DbDep, current: UserDep, guild: GuildCo
     return _to_out(ev, count, is_reg)
 
 
+class RegisterRequest(BaseModel):
+    deck_id: int | None = None
+
+
 @router.post("/{event_id}/register", response_model=EventRegistrationOut, status_code=201)
-def register_to_event(event_id: int, db: DbDep, current: UserDep) -> EventRegistration:
+def register_to_event(
+    event_id: int, db: DbDep, current: UserDep, payload: RegisterRequest | None = None,
+) -> EventRegistration:
     if not current.profile:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sin perfil de jugador")
-    reg = event_svc.register_player(db, event_id=event_id, player_id=current.profile.id)
+    deck_id = payload.deck_id if payload else None
+    reg = event_svc.register_player(
+        db, event_id=event_id, player_id=current.profile.id, deck_id=deck_id,
+    )
+    db.commit()
+    db.refresh(reg)
+    return reg
+
+
+class DeckAssignRequest(BaseModel):
+    deck_id: int | None = None
+
+
+@router.patch("/registrations/{registration_id}/deck", response_model=EventRegistrationOut)
+def assign_deck(
+    registration_id: int, payload: DeckAssignRequest, db: DbDep, current: UserDep,
+) -> EventRegistration:
+    if not current.profile:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sin perfil")
+    reg = event_svc.assign_deck_to_registration(
+        db, registration_id=registration_id, deck_id=payload.deck_id,
+        by_player_id=current.profile.id,
+    )
     db.commit()
     db.refresh(reg)
     return reg
@@ -105,6 +135,188 @@ def cancel_my_registration(registration_id: int, db: DbDep, current: UserDep):
     return None
 
 
+# ============================== Torneo: standings, pairings, drop ==============================
+
+
+class StandingOut(BaseModel):
+    rank: int
+    player_id: int
+    alias: str
+    elite_id_code: str
+    match_points: int
+    rounds_won: int
+    rounds_lost: int
+    rounds_draw: int
+    games_won: int
+    games_lost: int
+    omw: float
+    gw: float
+    ogw: float
+    matches_played: int
+    dropped: bool
+
+
+class PairingOut(BaseModel):
+    match_id: int
+    round_number: int
+    table_number: int | None = None
+    player_a_id: int
+    player_a_alias: str
+    player_b_id: int | None = None
+    player_b_alias: str | None = None
+    is_bye: bool
+    is_draw: bool
+    games_a: int
+    games_b: int
+    winner_id: int | None = None
+    reported_at: str | None = None
+
+
+def _match_to_pairing(db, m: MatchResult) -> PairingOut:
+    a = db.get(PlayerProfile, m.player_a_id)
+    b = db.get(PlayerProfile, m.player_b_id) if m.player_b_id else None
+    return PairingOut(
+        match_id=m.id, round_number=m.round_number, table_number=m.table_number,
+        player_a_id=m.player_a_id, player_a_alias=a.alias if a else "?",
+        player_b_id=m.player_b_id, player_b_alias=b.alias if b else None,
+        is_bye=m.is_bye, is_draw=m.is_draw,
+        games_a=m.games_a, games_b=m.games_b, winner_id=m.winner_id,
+        reported_at=m.reported_at.isoformat() if m.reported_at else None,
+    )
+
+
+@router.get("/{event_id}/standings", response_model=list[StandingOut])
+def get_standings(event_id: int, db: DbDep) -> list[StandingOut]:
+    rows = tour_svc.compute_standings(db, event_id=event_id)
+    return [
+        StandingOut(
+            rank=r.rank, player_id=r.player_id, alias=r.alias, elite_id_code=r.elite_id_code,
+            match_points=r.match_points, rounds_won=r.rounds_won, rounds_lost=r.rounds_lost,
+            rounds_draw=r.rounds_draw, games_won=r.games_won, games_lost=r.games_lost,
+            omw=r.omw, gw=r.gw, ogw=r.ogw,
+            matches_played=r.matches_played, dropped=r.dropped,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/{event_id}/rounds/{round_number}/pairings", response_model=list[PairingOut])
+def get_round_pairings(event_id: int, round_number: int, db: DbDep) -> list[PairingOut]:
+    matches = list(db.scalars(
+        select(MatchResult).where(
+            MatchResult.event_id == event_id,
+            MatchResult.round_number == round_number,
+        ).order_by(MatchResult.table_number)
+    ))
+    return [_match_to_pairing(db, m) for m in matches]
+
+
+@router.get("/{event_id}/my-current-match", response_model=PairingOut | None)
+def get_my_current_match(event_id: int, db: DbDep, current: UserDep) -> PairingOut | None:
+    """Devuelve el match activo (último round, sin reportar) del jugador."""
+    if not current.profile:
+        return None
+    last_round = db.scalar(
+        select(func.coalesce(func.max(MatchResult.round_number), 0)).where(
+            MatchResult.event_id == event_id
+        )
+    ) or 0
+    if last_round == 0:
+        return None
+    m = db.scalar(
+        select(MatchResult).where(
+            MatchResult.event_id == event_id,
+            MatchResult.round_number == last_round,
+            (MatchResult.player_a_id == current.profile.id) | (MatchResult.player_b_id == current.profile.id),
+        )
+    )
+    return _match_to_pairing(db, m) if m else None
+
+
+@router.post("/{event_id}/drop", status_code=204)
+def drop_from_event(event_id: int, db: DbDep, current: UserDep):
+    """El jugador autenticado se retira del evento."""
+    if not current.profile:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sin perfil")
+    tour_svc.drop_player(db, event_id=event_id, player_id=current.profile.id)
+    db.commit()
+    return None
+
+
+# ============================== Admin: pairings + report ==============================
+
+
+class ReportMatchRequest(BaseModel):
+    winner_id: int | None = None
+    is_draw: bool = False
+    games_a: int = 0
+    games_b: int = 0
+
+
+@router.post("/{event_id}/rounds/next", response_model=list[PairingOut])
+def start_next_round(event_id: int, db: DbDep, admin: AdminDep) -> list[PairingOut]:
+    """Genera pairings de la próxima ronda y los persiste (admin)."""
+    ev = db.get(Event, event_id)
+    if not ev:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
+    if ev.status not in (EventStatus.OPEN, EventStatus.CLOSED):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Estado del evento no permite iniciar ronda ({ev.status.value})",
+        )
+    # Si es la primera ronda, lockear todos los decks asociados.
+    last_round = db.scalar(
+        select(func.coalesce(func.max(MatchResult.round_number), 0)).where(
+            MatchResult.event_id == event_id
+        )
+    ) or 0
+    if last_round == 0:
+        event_svc.lock_decks_for_event(db, event_id=event_id)
+        if ev.status == EventStatus.OPEN:
+            ev.status = EventStatus.CLOSED
+    proposals = tour_svc.generate_pairings(db, event_id=event_id)
+    if not proposals:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No hay jugadores activos para emparejar")
+    matches = tour_svc.persist_pairings(db, event_id=event_id, pairings=proposals)
+    db.commit()
+    return [_match_to_pairing(db, m) for m in matches]
+
+
+@router.post("/{event_id}/matches/{match_id}/report", response_model=PairingOut)
+def report_match_result(
+    event_id: int, match_id: int, payload: ReportMatchRequest,
+    db: DbDep, admin: AdminDep,
+) -> PairingOut:
+    m = db.get(MatchResult, match_id)
+    if not m or m.event_id != event_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Match no encontrado")
+    # Validar winner_id es uno de los dos jugadores.
+    if not payload.is_draw and payload.winner_id not in (m.player_a_id, m.player_b_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "winner_id debe ser player_a o player_b")
+    updated = tour_svc.report_match(
+        db, match_id=match_id,
+        winner_id=payload.winner_id, is_draw=payload.is_draw,
+        games_a=payload.games_a, games_b=payload.games_b,
+        reported_by_user_id=admin.id,
+    )
+    db.commit()
+    return _match_to_pairing(db, updated)
+
+
+@router.post("/{event_id}/finalize", response_model=dict)
+def finalize_event(event_id: int, db: DbDep, admin: AdminDep) -> dict:
+    """Cierra el evento: calcula final_positions desde standings y dispara EXP automática.
+    Idempotencia: award_event_exp ya valida que no se haya corrido antes."""
+    ev = db.get(Event, event_id)
+    if not ev:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
+    positions = tour_svc.finalize_positions(db, event_id=event_id)
+    summary = event_svc.award_event_exp(db, event_id=event_id, admin_id=admin.id)
+    db.commit()
+    summary["positions_assigned"] = positions
+    return summary
+
+
 # ============================== Games ==============================
 
 
@@ -114,3 +326,27 @@ games_router = APIRouter()
 @games_router.get("", response_model=list[GameOut])
 def list_games(db: DbDep) -> list[Game]:
     return list(db.scalars(select(Game).where(Game.is_active == True).order_by(Game.name)))
+
+
+@games_router.get("/{game_id}/formats", response_model=list[GameFormatOut])
+def list_formats_public(game_id: int, db: DbDep) -> list[GameFormat]:
+    """Formatos activos de un juego — público (decks/eventos lo consultan)."""
+    return list(
+        db.scalars(
+            select(GameFormat)
+            .where(GameFormat.game_id == game_id, GameFormat.is_active.is_(True))
+            .order_by(GameFormat.sort_order, GameFormat.name)
+        )
+    )
+
+
+@games_router.get("/{game_id}/sets", response_model=list[GameSetOut])
+def list_sets_public(game_id: int, db: DbDep) -> list[GameSet]:
+    """Sets activos de un juego — público."""
+    return list(
+        db.scalars(
+            select(GameSet)
+            .where(GameSet.game_id == game_id, GameSet.is_active.is_(True))
+            .order_by(GameSet.released_at.desc().nulls_last(), GameSet.name)
+        )
+    )
