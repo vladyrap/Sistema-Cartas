@@ -29,6 +29,10 @@ import SpectatorStream from './pages/SpectatorStream';
 import CardHologramLab from './pages/CardHologramLab';
 import BracketReplayCinematic from './pages/BracketReplayCinematic';
 import PlayerTrailer from './pages/PlayerTrailer';
+import ArEliteId from './pages/ArEliteId';
+import TradeSimulator from './pages/TradeSimulator';
+import DeckDuelSimulator from './pages/DeckDuelSimulator';
+import AudioVisualizer from './pages/AudioVisualizer';
 import Missions from './pages/Missions';
 import HallOfFame from './pages/HallOfFame';
 import PublicProfile from './pages/PublicProfile';
@@ -88,6 +92,10 @@ export default function App() {
       <Route path="/decks/:id/holo" element={<CardHologramLab />} />
       <Route path="/events/:id/cinema-replay" element={<BracketReplayCinematic />} />
       <Route path="/players/:id/trailer" element={<PlayerTrailer />} />
+      <Route path="/ar-id" element={<ArEliteId />} />
+      <Route path="/trade" element={<TradeSimulator />} />
+      <Route path="/duel" element={<DeckDuelSimulator />} />
+      <Route path="/visualizer" element={<AudioVisualizer />} />
       <Route path="/missions" element={<Missions />} />
       <Route path="/hall-of-fame" element={<HallOfFame />} />
       <Route path="/players/:id" element={<PublicProfile />} />
