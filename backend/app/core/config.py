@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     ai_backend: str = "mock"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
+    # MercadoPago: secret para validar firma del webhook (global, del panel MP).
+    # Cada Gremio tiene su access_token propio en guilds.mp_access_token.
+    mp_webhook_secret: str = ""
 
     @property
     def cors_origins(self) -> list[str]:

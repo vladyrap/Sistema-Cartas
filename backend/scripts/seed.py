@@ -29,12 +29,20 @@ from app.core.security import hash_password
 from app.models import (
     Achievement,
     AttendanceStatus,
+    BanlistEntry,
+    BanlistStatus,
     Base,
     Event,
     EventRegistration,
     EventStatus,
     EventType,
     Game,
+    GameFormat,
+    GameSet,
+    Guild,
+    GuildMembership,
+    GuildRole,
+    GuildStatus,
     HallOfFameEntry,
     PaymentStatus,
     PlayerProfile,
@@ -52,6 +60,7 @@ from app.models import (
     User,
     UserRole,
 )
+from app.services.tcg import normalize_card_name
 from app.services.elite_id import generate_next_elite_id
 from app.services.progression import (
     PROMOTED_STARTING_LEVEL,
@@ -65,6 +74,23 @@ def reset_db() -> None:
     print("→ Drop & create all tables...")
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+
+
+def seed_guild(db: Session) -> Guild:
+    """Crea el Gremio principal — tenant raíz para achievements/titles/products/eventos."""
+    print("→ Seeding Gremio principal (Calmar)...")
+    g = Guild(
+        code="calmar",
+        name="Calmar Trading Cards",
+        tagline="El gremio donde forjas tu leyenda",
+        description="Tienda principal de EliteCards — Santiago, Chile.",
+        accent_color="#7c3aed",
+        status=GuildStatus.ACTIVE,
+        is_public=True,
+    )
+    db.add(g)
+    db.flush()
+    return g
 
 
 def seed_games(db: Session) -> dict[str, Game]:
@@ -84,7 +110,76 @@ def seed_games(db: Session) -> dict[str, Game]:
     return games
 
 
-def seed_achievements_titles(db: Session) -> None:
+def seed_game_formats_and_sets(db: Session, games: dict[str, Game]) -> dict[str, GameFormat]:
+    """Formatos base + 1-2 sets recientes por juego, y un par de cartas en banlist
+    de ejemplo para que el admin tenga material con qué jugar.
+    """
+    print("→ Seeding formatos, sets y banlist base...")
+
+    # Reglas de deckbuilding por juego (Standard como default).
+    formats_spec = [
+        # (game_code, format_code, name, min_main, max_main, max_side, max_extra, max_copies, has_leader, is_singleton, is_rotating)
+        ("one_piece",   "STANDARD", "Standard",        50, 50,  0,  0, 4, True,  False, False),
+        ("pokemon",     "STANDARD", "Standard",        60, 60,  0,  0, 4, False, False, True),
+        ("pokemon",     "EXPANDED", "Expanded",        60, 60,  0,  0, 4, False, False, False),
+        ("union_arena", "STANDARD", "Standard",        50, 50,  0,  0, 4, False, False, False),
+        ("hololive",    "STANDARD", "Standard (Oshi + Main + Cheer)",
+                                                       50, 50,  0,  0, 4, True,  False, False),
+    ]
+    formats: dict[str, GameFormat] = {}
+    for (game_code, code, name, min_m, max_m, max_s, max_e, max_c,
+         has_leader, is_singleton, is_rotating) in formats_spec:
+        f = GameFormat(
+            game_id=games[game_code].id,
+            code=code,
+            name=name,
+            description=f"Formato {name} oficial — reglas base.",
+            min_main=min_m, max_main=max_m,
+            min_side=0, max_side=max_s,
+            min_extra=0, max_extra=max_e,
+            max_copies=max_c,
+            has_leader=has_leader,
+            is_singleton=is_singleton,
+            is_rotating=is_rotating,
+        )
+        db.add(f)
+        formats[f"{game_code}:{code}"] = f
+    db.flush()
+
+    sets_spec = [
+        # (game_code, set_code, name)
+        ("one_piece",   "OP-09", "Emperors in the New World"),
+        ("one_piece",   "OP-10", "Royal Bloodlines"),
+        ("pokemon",     "SV08",  "Surging Sparks"),
+        ("pokemon",     "SV09",  "Journey Together"),
+        ("union_arena", "UA-05", "Hunter x Hunter"),
+        ("hololive",    "HOL-01", "Premium Booster"),
+    ]
+    for game_code, code, name in sets_spec:
+        db.add(GameSet(game_id=games[game_code].id, code=code, name=name))
+
+    # Banlist mínima de ejemplo para que el admin vea el feature.
+    banlist_spec = [
+        # (game_code:format_code, card_name, status)
+        ("pokemon:STANDARD", "Lumineon V", BanlistStatus.BANNED),
+        ("one_piece:STANDARD", "Bellamy", BanlistStatus.BANNED),
+    ]
+    for fmt_key, card, status in banlist_spec:
+        f = formats.get(fmt_key)
+        if not f:
+            continue
+        db.add(BanlistEntry(
+            format_id=f.id,
+            card_name=card,
+            card_name_norm=normalize_card_name(card),
+            status=status,
+            notes="Ejemplo de seed.",
+        ))
+    db.flush()
+    return formats
+
+
+def seed_achievements_titles(db: Session, guild: Guild) -> None:
     print("→ Seeding catálogo de medallas y títulos...")
     achievements = [
         ("first_blood", "Primera Sangre", "Tu primer torneo competitivo"),
@@ -95,7 +190,7 @@ def seed_achievements_titles(db: Session) -> None:
         ("season_marathoner", "Maratonista de Temporada", "Participa todas las semanas de una temporada"),
     ]
     for code, name, desc in achievements:
-        db.add(Achievement(code=code, name=name, description=desc))
+        db.add(Achievement(guild_id=guild.id, code=code, name=name, description=desc))
 
     titles = [
         ("champion_t1", "Campeón Temporada I", "Ganaste la primera temporada de EliteCards"),
@@ -103,11 +198,11 @@ def seed_achievements_titles(db: Session) -> None:
         ("founder", "Fundador", "Te uniste durante el primer mes de la plataforma"),
     ]
     for code, name, desc in titles:
-        db.add(Title(code=code, name=name, description=desc))
+        db.add(Title(guild_id=guild.id, code=code, name=name, description=desc))
     db.flush()
 
 
-def seed_users_and_players(db: Session, games: dict[str, Game]) -> list[PlayerProfile]:
+def seed_users_and_players(db: Session, games: dict[str, Game], guild: Guild) -> list[PlayerProfile]:
     print("→ Seeding usuarios y perfiles (1 admin + 19 players)...")
     # Admin
     admin = User(
@@ -117,6 +212,11 @@ def seed_users_and_players(db: Session, games: dict[str, Game]) -> list[PlayerPr
     )
     db.add(admin)
     db.flush()
+    db.add(GuildMembership(
+        user_id=admin.id, guild_id=guild.id,
+        role=GuildRole.GUILD_ADMIN, is_active=True,
+        joined_at=datetime.now(timezone.utc),
+    ))
     code, num = generate_next_elite_id(db)
     db.add(PlayerProfile(
         user_id=admin.id, alias="admin", full_name="Administrador",
@@ -154,6 +254,11 @@ def seed_users_and_players(db: Session, games: dict[str, Game]) -> list[PlayerPr
         )
         db.add(u)
         db.flush()
+        db.add(GuildMembership(
+            user_id=u.id, guild_id=guild.id,
+            role=GuildRole.MEMBER, is_active=True,
+            joined_at=datetime.now(timezone.utc),
+        ))
         code, num = generate_next_elite_id(db)
         p = PlayerProfile(
             user_id=u.id,
@@ -170,7 +275,7 @@ def seed_users_and_players(db: Session, games: dict[str, Game]) -> list[PlayerPr
     return players
 
 
-def seed_seasons_and_history(db: Session, players: list[PlayerProfile]) -> dict[str, Season]:
+def seed_seasons_and_history(db: Session, players: list[PlayerProfile], guild: Guild) -> dict[str, Season]:
     """Crea T1 + T2 cerradas con resultados, y T3 ACTIVE aplicando la regla."""
     print("→ Seeding 2 temporadas cerradas (T1, T2) + 1 ACTIVE (T3)...")
 
@@ -179,6 +284,7 @@ def seed_seasons_and_history(db: Session, players: list[PlayerProfile]) -> dict[
 
     # ----- T1 -----
     t1 = Season(
+        guild_id=guild.id,
         number=1,
         name="Temporada 1 — El Despertar",
         starts_at=now - timedelta(days=270),
@@ -204,6 +310,7 @@ def seed_seasons_and_history(db: Session, players: list[PlayerProfile]) -> dict[
 
     # ----- T2 -----
     t2 = Season(
+        guild_id=guild.id,
         number=2,
         name="Temporada 2 — Forja del Reto",
         starts_at=now - timedelta(days=180),
@@ -247,6 +354,7 @@ def seed_seasons_and_history(db: Session, players: list[PlayerProfile]) -> dict[
 
     # ----- T3 ACTIVE (aplica regla de reset) -----
     t3 = Season(
+        guild_id=guild.id,
         number=3,
         name="Temporada 3 — Era del Acero",
         starts_at=now - timedelta(days=2),
@@ -294,7 +402,7 @@ def seed_seasons_and_history(db: Session, players: list[PlayerProfile]) -> dict[
     return seasons
 
 
-def seed_products(db: Session, games: dict[str, Game]) -> None:
+def seed_products(db: Session, games: dict[str, Game], guild: Guild) -> None:
     print("→ Seeding productos del catálogo...")
     products = [
         # Catálogo Normal
@@ -314,6 +422,7 @@ def seed_products(db: Session, games: dict[str, Game]) -> None:
     ]
     for name, game_id, category, price, stock, access, req_level, is_preorder in products:
         db.add(Product(
+            guild_id=guild.id,
             name=name, game_id=game_id, category=category,
             price_clp=Decimal(price), stock=stock,
             access=access, required_level=req_level,
@@ -322,7 +431,7 @@ def seed_products(db: Session, games: dict[str, Game]) -> None:
     db.flush()
 
 
-def seed_events(db: Session, games: dict[str, Game], seasons: dict[str, Season], players: list[PlayerProfile]) -> None:
+def seed_events(db: Session, games: dict[str, Game], seasons: dict[str, Season], players: list[PlayerProfile], guild: Guild) -> None:
     print("→ Seeding 8 eventos próximos en T3...")
     now = datetime.now(timezone.utc)
     t3 = seasons["T3"]
@@ -338,6 +447,7 @@ def seed_events(db: Session, games: dict[str, Game], seasons: dict[str, Season],
     ]
     for name, game_id, etype, days_ahead, slots, price in events_data:
         ev = Event(
+            guild_id=guild.id,
             name=name, game_id=game_id, season_id=t3.id,
             event_type=etype, status=EventStatus.OPEN,
             starts_at=now + timedelta(days=days_ahead),
@@ -424,12 +534,14 @@ def main() -> None:
     reset_db()
     db: Session = SessionLocal()
     try:
+        guild = seed_guild(db)
         games = seed_games(db)
-        seed_achievements_titles(db)
-        players = seed_users_and_players(db, games)
-        seasons = seed_seasons_and_history(db, players)
-        seed_products(db, games)
-        seed_events(db, games, seasons, players)
+        seed_game_formats_and_sets(db, games)
+        seed_achievements_titles(db, guild)
+        players = seed_users_and_players(db, games, guild)
+        seasons = seed_seasons_and_history(db, players, guild)
+        seed_products(db, games, guild)
+        seed_events(db, games, seasons, players, guild)
         seed_reservations(db, players)
         db.commit()
         print()

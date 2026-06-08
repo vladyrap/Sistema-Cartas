@@ -19,3 +19,6 @@ slowapi==0.1.9
 psycopg2-binary==2.9.10
 # Anthropic API client para features de IA (deck analyzer, weekly summary)
 anthropic==0.50.0
+mercadopago==2.2.3
+# Background scheduler para tareas periódicas (expiry, snapshots, FTS rebuild)
+apscheduler==3.10.4
