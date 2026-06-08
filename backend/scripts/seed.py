@@ -78,12 +78,12 @@ def reset_db() -> None:
 
 def seed_guild(db: Session) -> Guild:
     """Crea el Gremio principal — tenant raíz para achievements/titles/products/eventos."""
-    print("→ Seeding Gremio principal (Calmar)...")
+    print("→ Seeding Gremio principal (EliteCards Central)...")
     g = Guild(
-        code="calmar",
-        name="Calmar Trading Cards",
-        tagline="El gremio donde forjas tu leyenda",
-        description="Tienda principal de EliteCards — Santiago, Chile.",
+        code="elitecards",
+        name="EliteCards Central",
+        tagline="Donde forjas tu leyenda como Campeón",
+        description="Gremio principal de EliteCards — hogar de la Ruta del Campeón.",
         accent_color="#7c3aed",
         status=GuildStatus.ACTIVE,
         is_public=True,
