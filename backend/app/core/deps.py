@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.logging_config import user_id_ctx
 from app.core.security import decode_token
 from app.models import Guild, GuildMembership, GuildRole, GuildStatus, User, UserRole
 
@@ -25,14 +26,47 @@ def get_current_user(token: TokenDep, db: DbDep) -> User:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido o expirado")
     if payload.get("type") != "access":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Tipo de token inválido")
+    # Token revocado?
+    jti = payload.get("jti")
+    if jti:
+        from app.services import token_blocklist
+        if token_blocklist.is_revoked(db, jti):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revocado")
     user_id = int(payload["sub"])
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuario no encontrado o inactivo")
+    # Inyectar user_id en context para que los logs lo incluyan
+    user_id_ctx.set(user.id)
     return user
 
 
 UserDep = Annotated[User, Depends(get_current_user)]
+
+
+def get_current_user_optional(token: TokenDep, db: DbDep) -> User | None:
+    """Versión opcional: devuelve None si no hay token o es inválido."""
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+    except ValueError:
+        return None
+    if payload.get("type") != "access":
+        return None
+    jti = payload.get("jti")
+    if jti:
+        from app.services import token_blocklist
+        if token_blocklist.is_revoked(db, jti):
+            return None
+    user = db.get(User, int(payload["sub"]))
+    if user is None or not user.is_active:
+        return None
+    user_id_ctx.set(user.id)
+    return user
+
+
+OptionalUserDep = Annotated[User | None, Depends(get_current_user_optional)]
 
 
 def require_admin(current: UserDep) -> User:

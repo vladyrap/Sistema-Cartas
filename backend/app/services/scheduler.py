@@ -121,6 +121,12 @@ def job_rebuild_search_index() -> None:
         logger.exception("job_rebuild_search_index failed")
 
 
+def job_refresh_fx() -> None:
+    """Actualiza el tipo de cambio USD→CLP desde frankfurter.app."""
+    from app.services import fx
+    fx.refresh()
+
+
 # ============================== Lifecycle ==============================
 
 
@@ -153,6 +159,11 @@ def start() -> None:
     _scheduler.add_job(
         job_rebuild_search_index, CronTrigger(hour=4, minute=0),
         id="rebuild_search", replace_existing=True,
+    )
+    # FX rate diario 04:30 UTC (el refresh inicial corre en lifespan, no acá)
+    _scheduler.add_job(
+        job_refresh_fx, CronTrigger(hour=4, minute=30),
+        id="refresh_fx", replace_existing=True,
     )
     _scheduler.start()
     logger.info("scheduler started with %d jobs", len(_scheduler.get_jobs()))

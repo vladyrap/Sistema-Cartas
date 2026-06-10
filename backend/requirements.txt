@@ -22,3 +22,5 @@ anthropic==0.50.0
 mercadopago==2.2.3
 # Background scheduler para tareas periódicas (expiry, snapshots, FTS rebuild)
 apscheduler==3.10.4
+# Error tracking — solo activo si SENTRY_DSN está seteado
+sentry-sdk[fastapi]==2.18.0

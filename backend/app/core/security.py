@@ -1,4 +1,9 @@
-"""JWT + password hashing."""
+"""JWT + password hashing.
+
+Cada token tiene un `jti` único (JWT ID) que permite revocar tokens
+individualmente en logout vía la tabla revoked_tokens.
+"""
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
@@ -17,10 +22,15 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
+def _new_jti() -> str:
+    return secrets.token_urlsafe(16)
+
+
 def create_access_token(subject: str | int, *, extra_claims: dict | None = None) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(subject),
+        "jti": _new_jti(),
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_access_ttl_min),
         "type": "access",
@@ -34,6 +44,7 @@ def create_refresh_token(subject: str | int) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(subject),
+        "jti": _new_jti(),
         "iat": now,
         "exp": now + timedelta(days=settings.jwt_refresh_ttl_days),
         "type": "refresh",

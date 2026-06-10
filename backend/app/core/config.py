@@ -19,6 +19,13 @@ class Settings(BaseSettings):
 
     database_url: str
     redis_url: str = "redis://localhost:6379/0"
+    # Resend para email HTML transaccional (free tier 3k/mes)
+    resend_api_key: str = ""
+
+    # Discord OAuth (free) — para login con Discord
+    discord_client_id: str = ""
+    discord_client_secret: str = ""
+    discord_redirect_uri: str = ""  # ej: http://localhost:5173/auth/discord/callback
     jwt_secret: str = "dev-secret"
     jwt_algorithm: str = "HS256"
     jwt_access_ttl_min: int = 15
@@ -43,6 +50,10 @@ class Settings(BaseSettings):
     # Cada Gremio tiene su access_token propio en guilds.mp_access_token.
     mp_webhook_secret: str = ""
 
+    # Sentry — opcional. Vacío = error tracking deshabilitado.
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.0
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
@@ -53,6 +64,7 @@ class Settings(BaseSettings):
 
     def validate_security(self) -> None:
         """Llamado al boot. Falla rápido en prod con configuración insegura."""
+        # JWT_SECRET fuerte
         if self.jwt_secret.strip().lower() in _WEAK_SECRETS or len(self.jwt_secret) < 32:
             if self.is_prod:
                 raise RuntimeError(
@@ -65,10 +77,32 @@ class Settings(BaseSettings):
                 "Token sugerido: %s",
                 secrets.token_urlsafe(48),
             )
+
+        # CORS sin localhost en prod
         if self.is_prod and "localhost" in self.allowed_origins:
             log.warning(
                 "⚠ ALLOWED_ORIGINS contiene 'localhost' en producción. "
                 "Reemplazá por dominios reales."
+            )
+
+        # SQLite en prod = no
+        if self.is_prod and self.database_url.startswith("sqlite"):
+            raise RuntimeError(
+                "DATABASE_URL=sqlite en producción no está soportado. "
+                "Migrá a Postgres antes de subir."
+            )
+
+        # MercadoPago webhook secret obligatorio en prod
+        if self.is_prod and not self.mp_webhook_secret:
+            log.warning(
+                "⚠ MP_WEBHOOK_SECRET vacío en prod. Los webhooks de MercadoPago "
+                "NO van a verificar firma — riesgo de spoof."
+            )
+
+        # FRONTEND_URL apuntando a localhost en prod
+        if self.is_prod and "localhost" in self.frontend_url:
+            log.warning(
+                "⚠ FRONTEND_URL apunta a localhost en prod. Links de emails van a romperse."
             )
 
 

@@ -9,15 +9,22 @@ Flow:
 6. Backend consulta el payment, valida que external_reference == reservation_id,
    y marca status=PAID + paid_at.
 7. Usuario es redirigido de vuelta al frontend (/payments/return) con confirmación.
+
+Idempotency:
+   MP reintenta el webhook hasta recibir 2xx. La tabla payment_events tiene un
+   UNIQUE sobre idempotency_key (x-request-id || payment_id:status). Si el mismo
+   evento llega 2 veces, el INSERT falla y retornamos early sin reprocessar.
 """
+import json
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request, status as http_status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.deps import DbDep, UserDep
-from app.models import Guild, Product, Reservation, ReservationStatus
+from app.models import Guild, PaymentEvent, Product, Reservation, ReservationStatus
 from app.schemas.common import CreatePaymentOut
 from app.services import mercadopago as mp_svc
 from app.services import notifications as notif_svc
@@ -129,16 +136,36 @@ async def mercadopago_webhook(request: Request, db: DbDep) -> dict:
     except (TypeError, ValueError):
         return {"received": True, "ignored": "invalid_external_reference"}
 
+    payment_status = payment.get("status")
+
+    # ── Idempotency check ──────────────────────────────────────────────
+    # Clave preferida: x-request-id del header (único por MP). Fallback:
+    # payment_id:status (sobrevive a reintentos del mismo evento).
+    idempotency_key = req_id or f"{data_id}:{payment_status}"
+    try:
+        db.add(PaymentEvent(
+            idempotency_key=idempotency_key,
+            x_request_id=req_id,
+            mp_payment_id=str(data_id),
+            mp_payment_status=payment_status,
+            reservation_id=reservation_id,
+            raw_body=json.dumps({"body": body, "qp": qp}, default=str)[:4000],
+        ))
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        log.info("Webhook duplicado ignorado (key=%s)", idempotency_key)
+        return {"received": True, "duplicate": True, "idempotency_key": idempotency_key}
+
     res = db.get(Reservation, reservation_id)
     if not res:
+        db.commit()  # mantenemos el PaymentEvent registrado igual
         return {"received": True, "ignored": "reservation_not_found"}
 
-    payment_status = payment.get("status")
     res.mp_payment_id = str(data_id)
     if payment_status == "approved" and res.status != ReservationStatus.PAID:
         res.status = ReservationStatus.PAID
         res.paid_at = datetime.now(timezone.utc)
-        # Notif
         notif_svc.notify(
             db, player_id=res.player_id,
             type="reservation_paid",
