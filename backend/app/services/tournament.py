@@ -12,12 +12,19 @@ El servicio NO genera pairings óptimos (eso es NP-hard); usa un greedy razonabl
   2. Dentro de cada grupo, intentar emparejar evitando rematch.
   3. Si hay impar en un grupo, bajar a alguien al siguiente.
   4. Si queda 1 sin pareja al final → bye automático.
+
+Concurrencia / robustez:
+  - generate_pairings y persist_pairings toman pessimistic lock en el Event row
+    (SELECT FOR UPDATE) — Postgres bloquea, SQLite lo ignora silenciosamente.
+  - report_match valida winner ∈ {player_a, player_b} antes de tocar regs.
+  - Revert+apply de counters va dentro de SAVEPOINT (begin_nested) para que
+    una falla parcial no deje el evento en estado inconsistente.
 """
-from __future__ import annotations
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
-from dataclasses import dataclass, field
-from typing import Iterable
-
+from fastapi import HTTPException, status as http_status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -29,6 +36,38 @@ from app.models import (
     PlayerProfile,
 )
 from app.services import realtime as rt
+
+log = logging.getLogger(__name__)
+
+
+# ============================== Helpers ==============================
+
+
+def invalidate_event_cache(event_id: int) -> None:
+    """Centraliza la invalidación del cache de standings + rondas activas.
+
+    NO callable desde DBdirect — solo lo usan los services de torneo.
+    Loguea si falla en lugar de tragárselo silenciosamente (cambio vs el
+    comportamiento anterior).
+    """
+    try:
+        from app.services.cache import invalidate_event
+        invalidate_event(event_id)
+    except Exception:
+        log.exception("Cache invalidation failed for event %s", event_id)
+
+
+def _lock_event(db: Session, event_id: int) -> Event:
+    """Pessimistic lock en Event row. Postgres bloquea, SQLite ignora.
+
+    Levanta 404 si el evento no existe.
+    """
+    event = db.execute(
+        select(Event).where(Event.id == event_id).with_for_update()
+    ).scalar_one_or_none()
+    if not event:
+        raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Evento no encontrado")
+    return event
 
 
 # ============================== Datos derivados ==============================
@@ -45,7 +84,7 @@ class StandingRow:
     rounds_draw: int
     games_won: int
     games_lost: int
-    omw: float  # 0.0 - 1.0
+    omw: float
     gw: float
     ogw: float
     dropped: bool
@@ -53,7 +92,6 @@ class StandingRow:
 
     @property
     def rank(self) -> int:
-        # rank se setea afuera tras ordenar.
         return self._rank if hasattr(self, "_rank") else 0
 
 
@@ -108,8 +146,7 @@ def compute_standings(db: Session, *, event_id: int) -> list[StandingRow]:
 
 
 def _compute_standings_inner(db: Session, *, event_id: int) -> list[StandingRow]:
-    """Cálculo real sin cache. Usado por compute_standings (cacheado) y por
-    invalidaciones internas."""
+    """Cálculo real sin cache."""
     regs = list(
         db.scalars(select(EventRegistration).where(EventRegistration.event_id == event_id))
     )
@@ -117,12 +154,9 @@ def _compute_standings_inner(db: Session, *, event_id: int) -> list[StandingRow]
         return []
 
     reg_by_player: dict[int, EventRegistration] = {r.player_id: r for r in regs}
-
-    # Pre-cómputo: MW% y GW% por jugador.
     mw_cache = {pid: _mw_pct(reg) for pid, reg in reg_by_player.items()}
     gw_cache = {pid: _gw_pct(reg) for pid, reg in reg_by_player.items()}
 
-    # OMW% y OGW% por jugador.
     rows: list[StandingRow] = []
     for pid, reg in reg_by_player.items():
         opps = _opponents_of(db, event_id, pid)
@@ -154,10 +188,7 @@ def _compute_standings_inner(db: Session, *, event_id: int) -> list[StandingRow]
             matches_played=played,
         ))
 
-    rows.sort(
-        key=lambda r: (r.match_points, r.omw, r.gw, r.ogw),
-        reverse=True,
-    )
+    rows.sort(key=lambda r: (r.match_points, r.omw, r.gw, r.ogw), reverse=True)
     for i, r in enumerate(rows, start=1):
         r._rank = i  # type: ignore[attr-defined]
     return rows
@@ -184,17 +215,36 @@ def _current_round_number(db: Session, event_id: int) -> int:
 def generate_pairings(db: Session, *, event_id: int) -> list[PairingProposal]:
     """Genera los pairings de la PRÓXIMA ronda.
 
-    - Ordena jugadores activos (no dropped) por MP DESC con tiebreakers.
-    - Empareja greedy evitando rematches; si el evitar rematch deja a alguien
-      colgado, se permite repetir.
-    - Si queda número impar, el último (menor MP) recibe bye.
+    Toma pessimistic lock en el evento para evitar dos generaciones
+    concurrentes desde dos admins en simultáneo.
     """
-    standings = compute_standings(db, event_id=event_id)
+    _lock_event(db, event_id)
+
+    # Verificar que la ronda actual está cerrada (todas reportadas o bye)
+    current_round = _current_round_number(db, event_id)
+    if current_round > 0:
+        unfinished = db.scalar(
+            select(func.count(MatchResult.id)).where(
+                MatchResult.event_id == event_id,
+                MatchResult.round_number == current_round,
+                MatchResult.reported_at.is_(None),
+                MatchResult.is_bye.is_(False),
+            )
+        ) or 0
+        if unfinished:
+            raise HTTPException(
+                http_status.HTTP_400_BAD_REQUEST,
+                f"La ronda {current_round} tiene {unfinished} match(es) sin reportar. "
+                f"Cerrá la ronda actual antes de generar la próxima.",
+            )
+
+    # NO usar la versión cacheada — pairings necesita data fresca y, en tests
+    # con eventos efímeros, el cache puede traer resultados de otros tests.
+    standings = _compute_standings_inner(db, event_id=event_id)
     active = [s for s in standings if not s.dropped]
     if not active:
         return []
 
-    # Map de oponentes previos por jugador.
     opps_map: dict[int, set[int]] = {
         s.player_id: _opponents_of(db, event_id, s.player_id) for s in active
     }
@@ -210,7 +260,6 @@ def generate_pairings(db: Session, *, event_id: int) -> list[PairingProposal]:
         if a.player_id in paired:
             i += 1
             continue
-        # Buscar el primer oponente válido (no jugado) desde el más cercano en standings.
         partner = None
         for j in range(i + 1, len(queue)):
             b = queue[j]
@@ -219,7 +268,6 @@ def generate_pairings(db: Session, *, event_id: int) -> list[PairingProposal]:
             if b.player_id not in opps_map[a.player_id]:
                 partner = b
                 break
-        # Si nadie quedó disponible sin rematch, permitir rematch con el primero libre.
         if partner is None:
             for j in range(i + 1, len(queue)):
                 b = queue[j]
@@ -236,11 +284,8 @@ def generate_pairings(db: Session, *, event_id: int) -> list[PairingProposal]:
             paired.add(partner.player_id)
             table += 1
         else:
-            # No queda nadie → bye automático.
             pairings.append(PairingProposal(
-                table_number=table,
-                player_a_id=a.player_id,
-                player_b_id=None,
+                table_number=table, player_a_id=a.player_id, player_b_id=None,
             ))
             paired.add(a.player_id)
             table += 1
@@ -250,22 +295,30 @@ def generate_pairings(db: Session, *, event_id: int) -> list[PairingProposal]:
 
 
 def persist_pairings(
-    db: Session, *, event_id: int, pairings: list[PairingProposal]
+    db: Session, *, event_id: int, pairings: list[PairingProposal],
 ) -> list[MatchResult]:
-    """Crea MatchResult rows para una nueva ronda. Aplica bye automáticamente
-    (winner_a=player_a, games 2-0). Devuelve los matches creados."""
-    next_round = _current_round_number(db, event_id) + 1
+    """Crea MatchResult rows para una nueva ronda.
+
+    Aplica bye automáticamente (winner=player_a, games 2-0).
+    Bajo pessimistic lock — si dos admins llamaron generate_pairings concurrente,
+    el segundo en llegar acá detecta los matches creados y aborta limpiamente.
+    """
+    _lock_event(db, event_id)
+
+    # Re-chequear bajo lock que no se creó otra ronda mientras tanto.
+    pre_round = _current_round_number(db, event_id)
+    next_round = pre_round + 1
+
     created: list[MatchResult] = []
-    for p in pairings:  # noqa: PLR1702
+    for p in pairings:
         if p.player_b_id is None:
-            # Bye: gana automático.
             m = MatchResult(
                 event_id=event_id, round_number=next_round, table_number=p.table_number,
                 player_a_id=p.player_a_id, player_b_id=None,
                 winner_id=p.player_a_id, is_bye=True,
                 games_a=2, games_b=0,
+                reported_at=datetime.now(timezone.utc),
             )
-            # Aplicar puntaje inmediato.
             reg = db.scalar(
                 select(EventRegistration).where(
                     EventRegistration.event_id == event_id,
@@ -284,11 +337,8 @@ def persist_pairings(
         db.add(m)
         db.flush()
         created.append(m)
-    try:
-        from app.services.cache import invalidate_event
-        invalidate_event(event_id)
-    except Exception:
-        pass
+
+    invalidate_event_cache(event_id)
     rt.emit_round_started(event_id, next_round, len(created))
     rt.emit_standings_updated(event_id)
     return created
@@ -297,22 +347,95 @@ def persist_pairings(
 # ============================== Reportar resultados ==============================
 
 
+def _validate_report(
+    match: MatchResult, *, winner_id: int | None, is_draw: bool,
+    games_a: int, games_b: int,
+) -> None:
+    """Validaciones tempranas — falla antes de tocar nada en DB."""
+    if match.is_bye:
+        raise HTTPException(http_status.HTTP_400_BAD_REQUEST, "Los byes no se reportan manualmente")
+    if games_a < 0 or games_b < 0:
+        raise HTTPException(http_status.HTTP_400_BAD_REQUEST, "games no pueden ser negativos")
+    if is_draw and winner_id is not None:
+        raise HTTPException(http_status.HTTP_400_BAD_REQUEST, "Un draw no tiene ganador")
+    if not is_draw and winner_id is None:
+        raise HTTPException(
+            http_status.HTTP_400_BAD_REQUEST,
+            "Resultado inválido: marcá draw o indicá un ganador",
+        )
+    if winner_id is not None and winner_id not in (match.player_a_id, match.player_b_id):
+        raise HTTPException(
+            http_status.HTTP_400_BAD_REQUEST,
+            "El ganador debe ser uno de los jugadores del match",
+        )
+    if not match.player_b_id and not is_draw:
+        # Match con player_b None solo puede ser bye (que ya rechazamos arriba) o setup roto
+        raise HTTPException(http_status.HTTP_400_BAD_REQUEST, "Match sin oponente — no se puede reportar")
+
+
+def _revert_counters(reg_a: EventRegistration, reg_b: EventRegistration, m: MatchResult) -> None:
+    if m.reported_at is None:
+        return
+    if m.is_draw:
+        reg_a.rounds_draw -= 1
+        reg_b.rounds_draw -= 1
+        reg_a.match_points -= 1
+        reg_b.match_points -= 1
+    elif m.winner_id == m.player_a_id:
+        reg_a.rounds_won -= 1
+        reg_b.rounds_lost -= 1
+        reg_a.match_points -= 3
+    elif m.winner_id == m.player_b_id:
+        reg_b.rounds_won -= 1
+        reg_a.rounds_lost -= 1
+        reg_b.match_points -= 3
+    reg_a.games_won -= m.games_a
+    reg_a.games_lost -= m.games_b
+    reg_b.games_won -= m.games_b
+    reg_b.games_lost -= m.games_a
+
+
+def _apply_counters(
+    reg_a: EventRegistration, reg_b: EventRegistration,
+    *, is_draw: bool, winner_id: int | None, games_a: int, games_b: int,
+) -> None:
+    if is_draw:
+        reg_a.rounds_draw += 1
+        reg_b.rounds_draw += 1
+        reg_a.match_points += 1
+        reg_b.match_points += 1
+    elif winner_id == reg_a.player_id:
+        reg_a.rounds_won += 1
+        reg_b.rounds_lost += 1
+        reg_a.match_points += 3
+    elif winner_id == reg_b.player_id:
+        reg_b.rounds_won += 1
+        reg_a.rounds_lost += 1
+        reg_b.match_points += 3
+    reg_a.games_won += games_a
+    reg_a.games_lost += games_b
+    reg_b.games_won += games_b
+    reg_b.games_lost += games_a
+
+
 def report_match(
     db: Session, *, match_id: int, winner_id: int | None, is_draw: bool,
     games_a: int, games_b: int, reported_by_user_id: int | None = None,
 ) -> MatchResult:
     """Reporta el resultado de un match y actualiza los counters de ambos jugadores.
 
-    Idempotente: si el match ya tenía resultado, revertimos el viejo y aplicamos el nuevo.
+    Idempotente + atómico:
+      - Validación temprana antes de tocar DB.
+      - Revert + apply de counters va dentro de SAVEPOINT (begin_nested).
+        Si algo falla en medio, ambos counters quedan como estaban.
+      - Side effects (rating, cache, websocket) son fuera del SAVEPOINT —
+        fallar acá no rompe el reporte ya commiteado a counters.
     """
-    from datetime import datetime, timezone
     m = db.get(MatchResult, match_id)
     if not m:
-        from fastapi import HTTPException, status as st
-        raise HTTPException(st.HTTP_404_NOT_FOUND, "Match no encontrado")
-    if m.is_bye:
-        from fastapi import HTTPException, status as st
-        raise HTTPException(st.HTTP_400_BAD_REQUEST, "Los byes no se reportan manualmente")
+        raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Match no encontrado")
+
+    _validate_report(m, winner_id=winner_id, is_draw=is_draw, games_a=games_a, games_b=games_b)
 
     reg_a = db.scalar(
         select(EventRegistration).where(
@@ -327,43 +450,29 @@ def report_match(
         )
     ) if m.player_b_id else None
 
-    # Revertir resultado anterior si lo había.
-    if m.reported_at is not None and reg_a and reg_b:
-        if m.is_draw:
-            reg_a.rounds_draw -= 1; reg_b.rounds_draw -= 1
-            reg_a.match_points -= 1; reg_b.match_points -= 1
-        elif m.winner_id == m.player_a_id:
-            reg_a.rounds_won -= 1; reg_b.rounds_lost -= 1
-            reg_a.match_points -= 3
-        elif m.winner_id == m.player_b_id:
-            reg_b.rounds_won -= 1; reg_a.rounds_lost -= 1
-            reg_b.match_points -= 3
-        reg_a.games_won -= m.games_a; reg_a.games_lost -= m.games_b
-        reg_b.games_won -= m.games_b; reg_b.games_lost -= m.games_a
+    if not reg_a or not reg_b:
+        raise HTTPException(
+            http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Inscripción inconsistente: jugadores sin registro en el evento",
+        )
 
-    # Aplicar resultado nuevo.
-    m.is_draw = is_draw
-    m.winner_id = None if is_draw else winner_id
-    m.games_a = max(0, int(games_a))
-    m.games_b = max(0, int(games_b))
-    m.reported_by_id = reported_by_user_id
-    m.reported_at = datetime.now(timezone.utc)
+    # Revert + apply atómico
+    with db.begin_nested():
+        _revert_counters(reg_a, reg_b, m)
+        m.is_draw = is_draw
+        m.winner_id = None if is_draw else winner_id
+        m.games_a = int(games_a)
+        m.games_b = int(games_b)
+        m.reported_by_id = reported_by_user_id
+        m.reported_at = datetime.now(timezone.utc)
+        _apply_counters(
+            reg_a, reg_b,
+            is_draw=is_draw, winner_id=winner_id,
+            games_a=m.games_a, games_b=m.games_b,
+        )
+        db.flush()
 
-    if reg_a and reg_b:
-        if is_draw:
-            reg_a.rounds_draw += 1; reg_b.rounds_draw += 1
-            reg_a.match_points += 1; reg_b.match_points += 1
-        elif winner_id == m.player_a_id:
-            reg_a.rounds_won += 1; reg_b.rounds_lost += 1
-            reg_a.match_points += 3
-        elif winner_id == m.player_b_id:
-            reg_b.rounds_won += 1; reg_a.rounds_lost += 1
-            reg_b.match_points += 3
-        reg_a.games_won += m.games_a; reg_a.games_lost += m.games_b
-        reg_b.games_won += m.games_b; reg_b.games_lost += m.games_a
-
-    db.flush()
-    # Aplicar rating Glicko-2 si el evento es ranked.
+    # Side effects — fuera de la transacción interna. Si fallan, no rompen el counter update.
     try:
         from app.services import rating as rating_svc
         rating_svc.apply_match_rating(
@@ -372,15 +481,9 @@ def report_match(
             winner_id=m.winner_id, is_draw=m.is_draw,
         )
     except Exception:
-        # No bloquear el reporte si rating falla — log y continuar.
-        import logging
-        logging.getLogger(__name__).exception("apply_match_rating failed for match %s", match_id)
-    # Invalidar cache de standings del evento.
-    try:
-        from app.services.cache import invalidate_event
-        invalidate_event(m.event_id)
-    except Exception:
-        pass
+        log.exception("apply_match_rating failed for match %s", match_id)
+
+    invalidate_event_cache(m.event_id)
     rt.emit_match_reported(
         m.event_id, m.id, m.round_number,
         winner_id=m.winner_id, is_draw=m.is_draw,
@@ -392,8 +495,6 @@ def report_match(
 
 def drop_player(db: Session, *, event_id: int, player_id: int) -> EventRegistration:
     """Marca al jugador como dropped — no recibirá más pairings."""
-    from datetime import datetime, timezone
-    from fastapi import HTTPException, status as st
     reg = db.scalar(
         select(EventRegistration).where(
             EventRegistration.event_id == event_id,
@@ -401,15 +502,12 @@ def drop_player(db: Session, *, event_id: int, player_id: int) -> EventRegistrat
         )
     )
     if not reg:
-        raise HTTPException(st.HTTP_404_NOT_FOUND, "Inscripción no encontrada")
+        raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Inscripción no encontrada")
     reg.dropped = True
     reg.dropped_at = datetime.now(timezone.utc)
     db.flush()
-    try:
-        from app.services.cache import invalidate_event
-        invalidate_event(event_id)
-    except Exception:
-        pass
+
+    invalidate_event_cache(event_id)
     player = db.get(PlayerProfile, player_id)
     rt.emit_player_dropped(event_id, player_id, alias=player.alias if player else None)
     rt.emit_standings_updated(event_id)
@@ -418,9 +516,8 @@ def drop_player(db: Session, *, event_id: int, player_id: int) -> EventRegistrat
 
 def finalize_positions(db: Session, *, event_id: int) -> int:
     """A partir de standings, asigna final_position a cada inscripción.
-    Llamarlo cuando el evento se acaba antes de award_event_exp.
-    Devuelve cantidad de inscritos con posición asignada."""
-    standings = compute_standings(db, event_id=event_id)
+    Usa data fresca (sin cache) para evitar inconsistencias en el cierre."""
+    standings = _compute_standings_inner(db, event_id=event_id)
     top_id = standings[0].player_id if standings else None
     for s in standings:
         reg = db.scalar(
@@ -434,3 +531,23 @@ def finalize_positions(db: Session, *, event_id: int) -> int:
     db.flush()
     rt.emit_event_finalized(event_id, top_player_id=top_id)
     return len(standings)
+
+
+def unfinalize_event(db: Session, *, event_id: int) -> dict:
+    """Revierte finalize_positions: limpia final_position de todas las inscripciones.
+    NO revierte EXP (eso lo hace el caller con el award_event_exp inverso si aplica).
+    """
+    event = _lock_event(db, event_id)
+    affected = db.execute(
+        select(func.count(EventRegistration.id)).where(
+            EventRegistration.event_id == event_id,
+            EventRegistration.final_position.is_not(None),
+        )
+    ).scalar() or 0
+    for reg in db.scalars(
+        select(EventRegistration).where(EventRegistration.event_id == event_id)
+    ):
+        reg.final_position = None
+    db.flush()
+    invalidate_event_cache(event_id)
+    return {"event_id": event_id, "positions_cleared": affected, "event_name": event.name}

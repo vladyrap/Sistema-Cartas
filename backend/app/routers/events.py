@@ -1,6 +1,10 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
+
+log = logging.getLogger(__name__)
 
 from app.core.deps import AdminDep, DbDep, GuildContext, UserDep, get_current_user
 from app.models import Event, EventRegistration, EventStatus, Game, GameFormat, GameSet, MatchResult, PlayerProfile, User
@@ -306,15 +310,50 @@ def report_match_result(
 @router.post("/{event_id}/finalize", response_model=dict)
 def finalize_event(event_id: int, db: DbDep, admin: AdminDep) -> dict:
     """Cierra el evento: calcula final_positions desde standings y dispara EXP automática.
-    Idempotencia: award_event_exp ya valida que no se haya corrido antes."""
+
+    Atomic: si award_event_exp falla, las posiciones también se revierten (rollback).
+    Idempotencia: award_event_exp valida related_event_id para no acreditar dos veces.
+    """
     ev = db.get(Event, event_id)
     if not ev:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
-    positions = tour_svc.finalize_positions(db, event_id=event_id)
-    summary = event_svc.award_event_exp(db, event_id=event_id, admin_id=admin.id)
-    db.commit()
+    try:
+        positions = tour_svc.finalize_positions(db, event_id=event_id)
+        summary = event_svc.award_event_exp(db, event_id=event_id, admin_id=admin.id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     summary["positions_assigned"] = positions
     return summary
+
+
+@router.post("/{event_id}/unfinalize", response_model=dict)
+def unfinalize_event(event_id: int, db: DbDep, admin: AdminDep) -> dict:
+    """Revierte la finalización del evento: limpia final_positions.
+
+    NO revierte automáticamente la EXP ya acreditada — eso requiere acción manual
+    (admin debe restar manualmente vía exp.adjust si quiere). El evento queda
+    re-finalizable: una nueva llamada a /finalize recalculará posiciones, pero
+    award_event_exp es idempotente por related_event_id (no doble pago).
+
+    Use case: admin reportó un match mal, ya finalizó, quiere corregirlo.
+    """
+    result = tour_svc.unfinalize_event(db, event_id=event_id)
+
+    # Audit log para trazabilidad
+    try:
+        from app.services import audit
+        audit.log(
+            db, admin_id=admin.id, action="event.unfinalize",
+            guild_id=getattr(db.get(Event, event_id), "guild_id", None),
+            target_kind="event", target_id=event_id,
+            payload={"positions_cleared": result["positions_cleared"]},
+        )
+    except Exception:
+        log.exception("audit log failed on unfinalize event %s", event_id)
+    db.commit()
+    return result
 
 
 # ============================== Games ==============================
