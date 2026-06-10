@@ -54,6 +54,15 @@ from app.models.deck import PlayerDeck
 from app.models.poll import Poll, PollOption, PollVote
 from app.models.player_rating import PlayerRating
 from app.models.bracket import EventBracket, BracketNode
+from app.models.payment_event import PaymentEvent
+from app.models.daily_spin import DailySpin
+from app.models.daily_card import DailyCard
+from app.models.bounty_kill import BountyKill
+from app.models.pack_opening import PackOpening
+from app.models.wordle import WordlePuzzle, WordleAttempt
+from app.models.card_swipe import CardSwipe
+from app.models.token_blocklist import RevokedToken
+from app.models.login_attempt import LoginAttempt
 
 __all__ = [
     "Base",
@@ -117,4 +126,14 @@ __all__ = [
     "PlayerRating",
     "EventBracket",
     "BracketNode",
+    "PaymentEvent",
+    "DailySpin",
+    "DailyCard",
+    "BountyKill",
+    "PackOpening",
+    "WordlePuzzle",
+    "WordleAttempt",
+    "CardSwipe",
+    "RevokedToken",
+    "LoginAttempt",
 ]
