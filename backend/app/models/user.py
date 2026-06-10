@@ -24,6 +24,11 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Discord OAuth — vacío si nunca conectó
+    discord_id: Mapped[str | None] = mapped_column(String(40), unique=True, index=True)
+    discord_username: Mapped[str | None] = mapped_column(String(80))
+    discord_avatar: Mapped[str | None] = mapped_column(String(120))
+
     profile: Mapped["PlayerProfile | None"] = relationship(
         "PlayerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )

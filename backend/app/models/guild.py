@@ -34,6 +34,14 @@ class Guild(Base, TimestampMixin):
     mp_access_token: Mapped[str | None] = mapped_column(String(255))
     mp_public_key: Mapped[str | None] = mapped_column(String(120))
 
+    # Telegram: cada Gremio puede tener un bot que postea en su grupo/canal.
+    # bot_token via @BotFather; chat_id del grupo destino.
+    telegram_bot_token: Mapped[str | None] = mapped_column(String(120))
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(60))
+
+    # Discord webhook URL — más simple que bot, cada Gremio configura el suyo.
+    discord_webhook_url: Mapped[str | None] = mapped_column(String(500))
+
 
 class GuildMembership(Base, TimestampMixin):
     """Relación usuario ↔ Gremio con rol específico."""
