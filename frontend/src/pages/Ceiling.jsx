@@ -3,9 +3,18 @@ import { motion } from 'framer-motion';
 import { TrendingUp, Target, Activity, Zap, Award } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import EmptyState from '../components/EmptyState';
+import AuthGuard from '../components/AuthGuard';
 import { api } from '../lib/api';
 
 export default function Ceiling() {
+  return (
+    <AuthGuard feature="Skill Ceiling Estimator" returnUrl="/ceiling" accent="cyan">
+      <CeilingContent />
+    </AuthGuard>
+  );
+}
+
+function CeilingContent() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 

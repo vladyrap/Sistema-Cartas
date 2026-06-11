@@ -186,6 +186,7 @@ def make_offering(request: Request, payload: OfferIn, current: UserDep, db: DbDe
         season_id=active.id,
         amount=-payload.exp,
         reason=f"devotion_offering:{payload.archetype}",
+        reason_code="devotion_offer",
     ))
     db.commit()
     return my_devotion(current, db)

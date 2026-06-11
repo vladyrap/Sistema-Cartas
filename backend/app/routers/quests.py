@@ -133,6 +133,7 @@ def claim_step(step_id: int, current: UserDep, db: DbDep) -> StepOut:
             season_id=active.id,
             amount=step.reward_exp,
             reason=f"quest_step:{step.arc_id}:{step.step_number}",
+            reason_code="quest_step",
         ))
 
     # Si era el último paso del arc, acreditar bonus del arc
@@ -152,6 +153,7 @@ def claim_step(step_id: int, current: UserDep, db: DbDep) -> StepOut:
                 season_id=active.id,
                 amount=arc.reward_exp,
                 reason=f"quest_arc_completed:{arc.code}",
+                reason_code="quest_arc",
             ))
 
     db.commit()

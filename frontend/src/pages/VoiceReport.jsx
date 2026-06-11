@@ -5,9 +5,18 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
+import AuthGuard from '../components/AuthGuard';
 import { api } from '../lib/api';
 
 export default function VoiceReport() {
+  return (
+    <AuthGuard feature="Voice Match Reporter" returnUrl="/voice-report" accent="cyan">
+      <VoiceReportContent />
+    </AuthGuard>
+  );
+}
+
+function VoiceReportContent() {
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [interim, setInterim] = useState('');

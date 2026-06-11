@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { Gift, Sparkles, Trophy, Zap, Clock, RotateCw } from 'lucide-react';
+import { Gift, Sparkles, Trophy, Zap, Clock, RotateCw, LogIn } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import EmptyState from '../components/EmptyState';
 import { api } from '../lib/api';
+import { auth } from '../lib/auth';
 
 const RARITY = {
   common:    { ring: 'ring-slate-500/40',   bg: 'from-slate-700 to-slate-900',     text: 'text-slate-300' },
@@ -16,16 +18,40 @@ const RARITY = {
 
 export default function Spinner() {
   const [status, setStatus] = useState(null);
+  const [needsAuth, setNeedsAuth] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [winning, setWinning] = useState(null);
   const wheelRef = useRef(null);
+  const isAuthed = auth.isAuthed();
 
   useEffect(() => {
-    api.get('/spinner/status').then((r) => setStatus(r.data)).catch(() => {
-      toast.error('No pudimos cargar el spinner');
-    });
-  }, []);
+    if (!isAuthed) {
+      setNeedsAuth(true);
+      return;
+    }
+    api.get('/spinner/status')
+      .then((r) => setStatus(r.data))
+      .catch((err) => {
+        if (err?.response?.status === 401) setNeedsAuth(true);
+        else toast.error('No pudimos cargar el spinner');
+      });
+  }, [isAuthed]);
+
+  if (needsAuth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-amber-950/30 text-white">
+        <Navbar />
+        <EmptyState
+          icon={LogIn}
+          title="Iniciá sesión para girar"
+          description="El Lucky Spinner requiere cuenta — el premio se acredita en tu temporada activa."
+          action={{ label: 'Iniciar sesión', to: '/login?returnUrl=/spinner' }}
+          accent="amber"
+        />
+      </div>
+    );
+  }
 
   const handleSpin = async () => {
     if (!status?.can_spin || spinning) return;

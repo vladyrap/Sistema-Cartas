@@ -92,8 +92,8 @@ export default function Login() {
     try {
       await auth.login(email, password);
       setSuccess(true);
-      // Portal flash + delay navigate
-      setTimeout(() => navigate('/dashboard'), 1100);
+      // Pequeño delay para que el botón muestre el estado "✓ Listo"
+      setTimeout(() => navigate('/dashboard'), 350);
     } catch (err) {
       const msg = err.response?.data?.detail || 'Credenciales inválidas';
       setError(msg);
@@ -472,20 +472,6 @@ export default function Login() {
           </motion.div>
         </div>
       </div>
-
-      {/* Success portal flash */}
-      <AnimatePresence>
-        {success && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0 }}
-            animate={{ opacity: [0, 1, 1, 0], scale: [0, 2, 60, 100] }}
-            transition={{ duration: 1.1, times: [0, 0.2, 0.7, 1] }}
-            className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center"
-          >
-            <div className="w-32 h-32 rounded-full bg-gradient-to-br from-violet-400 via-fuchsia-400 to-amber-300 blur-2xl" />
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Glitch on error */}
       <AnimatePresence>

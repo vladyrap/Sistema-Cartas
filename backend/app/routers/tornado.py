@@ -106,6 +106,7 @@ def _award_buff(db, profile: PlayerProfile, buff: dict, active_season: Season | 
             season_id=active_season.id,
             amount=int(buff["exp"]),
             reason="tornado_of_fate",
+            reason_code="tornado",
         ))
 
 

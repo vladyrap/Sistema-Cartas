@@ -111,6 +111,7 @@ def create_contract(request: Request, payload: CreateBountyIn, current: UserDep,
         season_id=active.id,
         amount=-payload.exp_offered,
         reason=f"bounty_contract:escrow:{target.alias}",
+        reason_code="bounty_escrow",
     ))
     contract = BountyContract(
         sponsor_player_id=current.profile.id,
@@ -162,6 +163,7 @@ def cancel_contract(contract_id: int, current: UserDep, db: DbDep) -> BountyOut:
         season_id=c.season_id,
         amount=c.exp_offered,
         reason=f"bounty_contract:refund:{c.id}",
+        reason_code="bounty_refund",
     ))
     db.commit()
     return _to_out(db, c)

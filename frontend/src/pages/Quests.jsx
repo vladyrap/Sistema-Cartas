@@ -4,9 +4,18 @@ import { Scroll, Crown, Check, Lock, Sparkles, ChevronRight, ArrowLeft } from 'l
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
 import EmptyState from '../components/EmptyState';
+import AuthGuard from '../components/AuthGuard';
 import { api } from '../lib/api';
 
 export default function Quests() {
+  return (
+    <AuthGuard feature="las Apprentice Quests" returnUrl="/quests" accent="amber">
+      <QuestsContent />
+    </AuthGuard>
+  );
+}
+
+function QuestsContent() {
   const [arcs, setArcs] = useState([]);
   const [selectedArc, setSelectedArc] = useState(null);
   const [loading, setLoading] = useState(true);

@@ -4,9 +4,18 @@ import { Atom, Sparkles, Plus, Zap, Trash2, RotateCw, Hash, ChevronRight } from 
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
 import EmptyState from '../components/EmptyState';
+import AuthGuard from '../components/AuthGuard';
 import { api } from '../lib/api';
 
 export default function QuantumDeck() {
+  return (
+    <AuthGuard feature="Quantum Deck" returnUrl="/quantum" accent="cyan">
+      <QuantumDeckContent />
+    </AuthGuard>
+  );
+}
+
+function QuantumDeckContent() {
   const [decks, setDecks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);

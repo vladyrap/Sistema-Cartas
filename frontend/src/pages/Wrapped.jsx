@@ -6,6 +6,7 @@ import {
   ChevronLeft, ChevronRight, Share2, Home,
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
+import AuthGuard from '../components/AuthGuard';
 import { api } from '../lib/api';
 
 const ACCENT = {
@@ -18,6 +19,14 @@ const ACCENT = {
 };
 
 export default function Wrapped() {
+  return (
+    <AuthGuard feature="tu Wrapped EliteCards" returnUrl="/wrapped" accent="fuchsia">
+      <WrappedContent />
+    </AuthGuard>
+  );
+}
+
+function WrappedContent() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [slide, setSlide] = useState(0);

@@ -14,16 +14,15 @@ from app.models import DailySpin, ExpTransaction, PlayerProfile, Season, SeasonS
 
 router = APIRouter()
 
-# Premios — pesos sumando 100. Total esperado por giro ≈ 25 EXP (engagement sin inflar economía).
+# Premios — pesos sumando 100. Mínimo garantizado: 10 EXP (sin slot "sin premio").
 PRIZES = [
-    {"weight": 35, "kind": "exp", "amount": 10,  "label": "10 EXP",   "rarity": "common"},
-    {"weight": 25, "kind": "exp", "amount": 25,  "label": "25 EXP",   "rarity": "common"},
-    {"weight": 15, "kind": "exp", "amount": 50,  "label": "50 EXP",   "rarity": "uncommon"},
-    {"weight": 10, "kind": "exp", "amount": 100, "label": "100 EXP",  "rarity": "uncommon"},
-    {"weight":  6, "kind": "exp", "amount": 200, "label": "200 EXP",  "rarity": "rare"},
-    {"weight":  3, "kind": "exp", "amount": 500, "label": "500 EXP",  "rarity": "epic"},
-    {"weight":  1, "kind": "exp", "amount": 1000,"label": "1000 EXP", "rarity": "legendary"},
-    {"weight":  5, "kind": "nothing", "amount": 0, "label": "Casi…",   "rarity": "common"},
+    {"weight": 40, "kind": "exp", "amount": 10,   "label": "10 EXP",   "rarity": "common"},
+    {"weight": 26, "kind": "exp", "amount": 25,   "label": "25 EXP",   "rarity": "common"},
+    {"weight": 15, "kind": "exp", "amount": 50,   "label": "50 EXP",   "rarity": "uncommon"},
+    {"weight": 10, "kind": "exp", "amount": 100,  "label": "100 EXP",  "rarity": "uncommon"},
+    {"weight":  5, "kind": "exp", "amount": 200,  "label": "200 EXP",  "rarity": "rare"},
+    {"weight":  3, "kind": "exp", "amount": 500,  "label": "500 EXP",  "rarity": "epic"},
+    {"weight":  1, "kind": "exp", "amount": 1000, "label": "1000 EXP", "rarity": "legendary"},
 ]
 
 WEIGHTS = [p["weight"] for p in PRIZES]
@@ -99,6 +98,7 @@ def spin(request: Request, current: UserDep, db: DbDep) -> PrizeOut:
                 season_id=active.id,
                 amount=prize["amount"],
                 reason=f"daily_spin:{prize['label']}",
+                reason_code="daily_spin",
             ))
 
     db.commit()

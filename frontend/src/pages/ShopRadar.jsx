@@ -7,9 +7,18 @@ import {
 import toast from 'react-hot-toast';
 import Navbar from '../components/Navbar';
 import EmptyState from '../components/EmptyState';
+import AuthGuard from '../components/AuthGuard';
 import { api } from '../lib/api';
 
 export default function ShopRadar() {
+  return (
+    <AuthGuard feature="Shop Radar" returnUrl="/shop-radar" accent="emerald">
+      <ShopRadarContent />
+    </AuthGuard>
+  );
+}
+
+function ShopRadarContent() {
   const [liked, setLiked] = useState([]);
   const [prices, setPrices] = useState(null); // BatchLookupOut
   const [loading, setLoading] = useState(true);

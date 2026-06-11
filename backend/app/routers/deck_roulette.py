@@ -136,6 +136,7 @@ def record_result(assignment_id: int, payload: RecordResultIn, current: UserDep,
                     season_id=active.id,
                     amount=300,
                     reason=f"deck_roulette:polyglot:{a.archetype}",
+                    reason_code="deck_roulette",
                 ))
 
     db.commit()
