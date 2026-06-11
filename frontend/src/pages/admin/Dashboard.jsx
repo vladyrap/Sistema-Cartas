@@ -25,6 +25,7 @@ const GLOBAL_CARDS = [
   { to: '/admin/duels', icon: Gavel, label: 'Duelos disputas', desc: 'Resolver reportes incompatibles + collusion flags', color: 'text-rose-300' },
   { to: '/admin/battle-pass', icon: Sparkles, label: 'Battle Pass', desc: 'Editor del pase competitivo (tiers + rewards)', color: 'text-violet-300' },
   { to: '/admin/growth', icon: Activity, label: 'Crecimiento', desc: 'Salud de comunidad · cupones · botín físico', color: 'text-emerald-300' },
+  { to: '/admin/content', icon: Sparkles, label: 'Content Engine', desc: 'Contenido social post-torneo con IA + aprobación', color: 'text-fuchsia-300' },
 ];
 
 const MAESTRO_CARDS = [

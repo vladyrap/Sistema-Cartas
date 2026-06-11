@@ -115,6 +115,7 @@ const AdminGrowth = lazy(() => import('./pages/admin/AdminGrowth'));
 const TradeLog = lazy(() => import('./pages/TradeLog'));
 const DeckOCR = lazy(() => import('./pages/DeckOCR'));
 const Kiosk = lazy(() => import('./pages/Kiosk'));
+const AdminContent = lazy(() => import('./pages/admin/AdminContent'));
 
 function RouteFallback() {
   return (
@@ -246,6 +247,7 @@ export default function App() {
         <Route path="/trade-log" element={<TradeLog />} />
         <Route path="/deck-ocr" element={<DeckOCR />} />
         <Route path="/events/:id/kiosk" element={<Kiosk />} />
+        <Route path="/admin/content" element={<AdminContent />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
       </ComingSoonGate>

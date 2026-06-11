@@ -90,6 +90,9 @@ from app.models.growth import (
     StoreCredit, Membership, SeasonNemesis,
     PhysicalReward, PhysicalRewardClaim, TradeRecord,
 )
+from app.models.content_engine import (
+    ContentJob, ContentPiece, ContentMetric, ContentWinningHook,
+)
 from app.models.meta_competitive import (
     TournamentAuction, TournamentAuctionBid,
     MercenaryOffer, MercenaryHire,
@@ -209,4 +212,5 @@ __all__ = [
     "EventWaitlist",
     "StoreCredit", "Membership", "SeasonNemesis",
     "PhysicalReward", "PhysicalRewardClaim", "TradeRecord",
+    "ContentJob", "ContentPiece", "ContentMetric", "ContentWinningHook",
 ]

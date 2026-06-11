@@ -277,6 +277,45 @@ def job_expire_unpaid_registrations() -> None:
         db.close()
 
 
+def job_content_runner() -> None:
+    """Procesa 1 ContentJob pendiente por corrida (no saturar la API)."""
+    from sqlalchemy import select
+    from app.core.db import SessionLocal
+    from app.models import ContentJob
+    from app.services import content_engine as ce_svc
+
+    db = SessionLocal()
+    try:
+        job = db.scalar(select(ContentJob).where(
+            ContentJob.status == "PENDING",
+            ContentJob.retries < ce_svc.MAX_RETRIES,
+        ).order_by(ContentJob.created_at))
+        if job:
+            ce_svc.process_job(db, job=job)
+            db.commit()
+            # Notificar al admin que hay contenido para aprobar
+            if job.status == "READY":
+                logger.info("content job %d listo para aprobación", job.id)
+    except Exception:
+        logger.exception("job_content_runner failed")
+    finally:
+        db.close()
+
+
+def job_winning_hooks() -> None:
+    """Semanal: cosecha hooks de piezas con SIS alto (few-shot del analista)."""
+    from app.core.db import SessionLocal
+    from app.services import content_engine as ce_svc
+    db = SessionLocal()
+    try:
+        ce_svc.harvest_winning_hooks(db)
+        db.commit()
+    except Exception:
+        logger.exception("job_winning_hooks failed")
+    finally:
+        db.close()
+
+
 def job_weekly_summaries() -> None:
     """Lunes: 'Tu Semana Elite' para jugadores activos."""
     from app.core.db import SessionLocal
@@ -426,6 +465,15 @@ def start() -> None:
     _scheduler.add_job(
         job_rivalry_reminders, CronTrigger(hour=22, minute=0),
         id="rivalry_reminders", replace_existing=True,
+    )
+    # Content Engine: runner cada 2 min + cosecha de hooks semanal
+    _scheduler.add_job(
+        job_content_runner, IntervalTrigger(minutes=2),
+        id="content_runner", replace_existing=True,
+    )
+    _scheduler.add_job(
+        job_winning_hooks, CronTrigger(day_of_week="mon", hour=13, minute=0),
+        id="winning_hooks", replace_existing=True,
     )
     _scheduler.start()
     logger.info("scheduler started with %d jobs", len(_scheduler.get_jobs()))

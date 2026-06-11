@@ -607,6 +607,14 @@ def finalize_positions(db: Session, *, event_id: int) -> int:
     except Exception:
         log.exception("battle_pass finalize hook failed for event %s", event_id)
 
+    # Content Engine — ÚLTIMO de la cadena: el harvest necesita storyline,
+    # achievements y predictions ya resueltos.
+    try:
+        from app.services import content_engine as ce_svc
+        ce_svc.enqueue_job(db, event_id=event_id)
+    except Exception:
+        log.exception("content engine enqueue failed for event %s", event_id)
+
     rt.emit_event_finalized(event_id, top_player_id=top_id)
     return len(standings)
 

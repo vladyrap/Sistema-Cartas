@@ -40,6 +40,7 @@ from app.routers import (
     battle_pass as battle_pass_router,
     coming_soon as coming_soon_router,
     competitive as competitive_router,
+    content_engine as content_engine_router,
     growth as growth_router,
     meta_competitive as meta_competitive_router,
     devotion, discord as discord_router, documentary, events, gamification,
@@ -365,6 +366,7 @@ app.include_router(competitive_router.router, prefix="/api/competitive", tags=["
 app.include_router(battle_pass_router.router, prefix="/api/battle-pass", tags=["battle-pass"])
 app.include_router(meta_competitive_router.router, prefix="/api/meta", tags=["meta-competitive"])
 app.include_router(growth_router.router, prefix="/api/growth", tags=["growth"])
+app.include_router(content_engine_router.router, prefix="/api/content", tags=["content-engine"])
 app.include_router(tcg_news_router.router, prefix="/api/news", tags=["news"])
 app.include_router(coming_soon_router.router, prefix="/api/coming-soon", tags=["coming-soon"])
 app.include_router(gamification.router, prefix="/api", tags=["gamification"])
