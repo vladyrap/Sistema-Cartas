@@ -217,21 +217,28 @@ def compute_meta_snapshot(db: Session, *, game_id: int | None = None, days: int 
     )
     matches = list(db.scalars(stmt))
 
-    # Encontrar decks de cada jugador en cada match via EventRegistration
+    # Bulk prefetch: (event_id, player_id) → deck_id y deck_id → PlayerDeck.
+    # Evita el N+1 (~4 queries/match) — esto deja todo en 3 queries totales.
+    event_ids = {m.event_id for m in matches}
+    reg_rows = db.execute(
+        select(EventRegistration.event_id, EventRegistration.player_id,
+               EventRegistration.deck_id)
+        .where(EventRegistration.event_id.in_(event_ids))
+    ).all() if event_ids else []
+    deck_by_key: dict[tuple[int, int], int | None] = {
+        (eid, pid): did for eid, pid, did in reg_rows
+    }
+    deck_ids = {did for *_ , did in reg_rows if did}
+    decks: dict[int, PlayerDeck] = {
+        d.id: d for d in db.scalars(select(PlayerDeck).where(PlayerDeck.id.in_(deck_ids)))
+    } if deck_ids else {}
+
     archetype_stats: dict[str, dict] = defaultdict(lambda: {"games": 0, "wins": 0})
     matchup_stats: dict[tuple[str, str], dict] = defaultdict(lambda: {"a_wins": 0, "b_wins": 0, "draws": 0})
 
     for m in matches:
-        reg_a = db.scalar(select(EventRegistration).where(
-            EventRegistration.event_id == m.event_id,
-            EventRegistration.player_id == m.player_a_id,
-        ))
-        reg_b = db.scalar(select(EventRegistration).where(
-            EventRegistration.event_id == m.event_id,
-            EventRegistration.player_id == m.player_b_id,
-        )) if m.player_b_id else None
-        deck_a = db.get(PlayerDeck, reg_a.deck_id) if reg_a and reg_a.deck_id else None
-        deck_b = db.get(PlayerDeck, reg_b.deck_id) if reg_b and reg_b.deck_id else None
+        deck_a = decks.get(deck_by_key.get((m.event_id, m.player_a_id)))
+        deck_b = decks.get(deck_by_key.get((m.event_id, m.player_b_id))) if m.player_b_id else None
         # Filtrar por game si se pidió
         if game_id is not None:
             if deck_a and deck_a.game_id != game_id and deck_b and deck_b.game_id != game_id:

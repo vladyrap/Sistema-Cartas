@@ -120,27 +120,14 @@ def membership_checkout(request: Request, current: UserDep, db: DbDep) -> dict:
     """Crea preference MP por 30 días de membresía. external_reference=sub:{player_id}."""
     if not current.profile:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sin perfil")
-    from app.models import Guild
-    guild = db.scalar(select(Guild).where(
-        Guild.mp_access_token.is_not(None), Guild.mp_access_token != "",
-    ))
     from app.services import mercadopago as mp_svc
-    front = settings.frontend_url.rstrip("/")
-    pref = mp_svc.create_preference(
-        access_token=(guild.mp_access_token if guild else "") or "",
-        items=[{
-            "title": "Membresía Elite — 30 días",
-            "quantity": 1,
-            "unit_price": settings.membership_price_clp,
-            "currency_id": "CLP",
-        }],
+    pref = mp_svc.create_checkout(
+        db,
+        title="Membresía Elite — 30 días",
+        unit_price_clp=settings.membership_price_clp,
         external_reference=f"sub:{current.profile.id}",
-        back_urls={
-            "success": f"{front}/membership?payment=success",
-            "failure": f"{front}/membership?payment=failure",
-            "pending": f"{front}/membership?payment=pending",
-        },
-        notification_url=f"{str(request.base_url).rstrip('/')}/api/payments/mercadopago/webhook",
+        back_path="/membership",
+        request_base_url=str(request.base_url),
     )
     return {
         "init_point": pref.get("init_point") or pref.get("sandbox_init_point") or "",
@@ -293,17 +280,21 @@ def loot_queue(admin: AdminDep, db: DbDep) -> list[dict]:
     rows = list(db.scalars(select(PhysicalRewardClaim).where(
         PhysicalRewardClaim.status == "PENDING"
     ).order_by(PhysicalRewardClaim.created_at)))
-    out = []
-    for c in rows:
-        p = db.get(PlayerProfile, c.player_id)
-        r = db.get(PhysicalReward, c.reward_id)
-        out.append({
-            "claim_id": c.id, "alias": p.alias if p else f"#{c.player_id}",
-            "label": r.label if r else c.achievement_key,
-            "achievement_key": c.achievement_key,
-            "since": c.created_at.isoformat(),
-        })
-    return out
+    alias_map = dict(db.execute(
+        select(PlayerProfile.id, PlayerProfile.alias)
+        .where(PlayerProfile.id.in_({c.player_id for c in rows}))
+    ).all()) if rows else {}
+    label_map = dict(db.execute(
+        select(PhysicalReward.id, PhysicalReward.label)
+        .where(PhysicalReward.id.in_({c.reward_id for c in rows}))
+    ).all()) if rows else {}
+    return [{
+        "claim_id": c.id,
+        "alias": alias_map.get(c.player_id, f"#{c.player_id}"),
+        "label": label_map.get(c.reward_id, c.achievement_key),
+        "achievement_key": c.achievement_key,
+        "since": c.created_at.isoformat(),
+    } for c in rows]
 
 
 @router.post("/loot/claims/{claim_id}/deliver")
@@ -435,16 +426,19 @@ def community_health(admin: AdminDep, db: DbDep) -> dict:
             PlayerRating.matches_played >= 3,
         ).order_by(desc(PlayerRating.last_match_at)).limit(30)
     ))
+    risk_alias = dict(db.execute(
+        select(PlayerProfile.id, PlayerProfile.alias)
+        .where(PlayerProfile.id.in_({r.player_id for r in at_risk_rows}))
+    ).all()) if at_risk_rows else {}
     seen: set[int] = set()
     at_risk = []
     for r in at_risk_rows:
         if r.player_id in seen:
             continue
         seen.add(r.player_id)
-        p = db.get(PlayerProfile, r.player_id)
         days = (now - (r.last_match_at if r.last_match_at.tzinfo else r.last_match_at.replace(tzinfo=timezone.utc))).days
         at_risk.append({
-            "player_id": r.player_id, "alias": p.alias if p else "?",
+            "player_id": r.player_id, "alias": risk_alias.get(r.player_id, "?"),
             "days_inactive": days, "matches_played": r.matches_played,
             "rating": round(r.rating),
         })

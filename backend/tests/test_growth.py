@@ -138,6 +138,51 @@ def test_member_waitlist_priority(db, make_event, make_player):
     assert still_waiting is not None
 
 
+def test_promote_skips_already_registered_entry(db, make_event, make_player):
+    """Regresión code review #1: la carrera 'jugador en waitlist se registra
+    directo' no debe explotar con IntegrityError — su entrada se consume."""
+    ev = make_event(price_clp=0, slots=2)
+    p1, filler, w = make_player(), make_player(), make_player()
+    reg1 = event_svc.register_player(db, event_id=ev.id, player_id=p1.id)
+    reg_f = event_svc.register_player(db, event_id=ev.id, player_id=filler.id)
+    db.commit()
+    event_svc.join_waitlist(db, event_id=ev.id, player_id=w.id)
+    db.commit()
+
+    # Carrera: se libera un cupo (delete directo, sin hook de promote)…
+    db.delete(reg_f)
+    db.flush()
+    # …y w lo toma registrándose DIRECTO antes de que corra el promote
+    event_svc.register_player(db, event_id=ev.id, player_id=w.id)
+    db.flush()
+    # Se libera OTRO cupo — ahora promote corre con w duplicado en la cola
+    db.delete(reg1)
+    db.flush()
+
+    result = event_svc.promote_from_waitlist(db, event_id=ev.id)
+    db.commit()  # si la sesión quedó envenenada, esto explota
+
+    assert result is None  # cola agotada (única entrada era duplicada)
+    entry_w = db.scalar(select(EventWaitlist).where(
+        EventWaitlist.event_id == ev.id, EventWaitlist.player_id == w.id,
+    ))
+    assert entry_w.promoted_at is not None, "entrada duplicada debe consumirse"
+
+
+def test_mark_payment_paid_sets_traceability(db, make_event, make_player):
+    """Regresión code review #2: mark_payment (camino legacy admin) ahora
+    setea paid_at y limpia expiración."""
+    ev = make_event(price_clp=3000)
+    p = make_player()
+    reg = event_svc.register_player(db, event_id=ev.id, player_id=p.id)
+    db.commit()
+    assert reg.payment_expires_at is not None
+    out = event_svc.mark_payment(db, registration_id=reg.id, status_value=PaymentStatus.PAID)
+    db.commit()
+    assert out.paid_at is not None
+    assert out.payment_expires_at is None
+
+
 # ══════════════════ NÉMESIS ══════════════════
 
 

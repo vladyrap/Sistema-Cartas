@@ -74,9 +74,6 @@ export default function EventSpectate() {
     );
   }
 
-  const timerRemaining = data.timer
-    ? Math.max(0, data.timer.remaining_seconds - (data.timer.is_paused ? 0 : tick % 60 === 0 ? 0 : 0))
-    : null;
   const min = data.timer ? Math.floor(data.timer.remaining_seconds / 60) : 0;
   const sec = data.timer ? data.timer.remaining_seconds % 60 : 0;
   const lowTime = data.timer && data.timer.remaining_seconds < 300 && !data.timer.is_paused;

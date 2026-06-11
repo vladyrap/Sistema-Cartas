@@ -168,7 +168,6 @@ def pay_registration(registration_id: int, request: Request, db: DbDep, current:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este evento es gratuito")
 
     from app.models import Guild
-    guild = db.get(Guild, ev.guild_id)
     from app.services import mercadopago as mp_svc
     from app.core.config import settings as _settings
 
@@ -179,22 +178,14 @@ def pay_registration(registration_id: int, request: Request, db: DbDep, current:
     if is_member and _settings.membership_event_discount_pct > 0:
         unit_price = max(1, unit_price * (100 - _settings.membership_event_discount_pct) // 100)
 
-    front_base = _settings.frontend_url.rstrip("/")
-    pref = mp_svc.create_preference(
-        access_token=(guild.mp_access_token if guild else "") or "",
-        items=[{
-            "title": f"Inscripción — {ev.name}" + (" (member)" if is_member else ""),
-            "quantity": 1,
-            "unit_price": unit_price,
-            "currency_id": "CLP",
-        }],
+    pref = mp_svc.create_checkout(
+        db,
+        title=f"Inscripción — {ev.name}" + (" (member)" if is_member else ""),
+        unit_price_clp=unit_price,
         external_reference=f"evt:{reg.id}",
-        back_urls={
-            "success": f"{front_base}/events/{ev.id}?payment=success",
-            "failure": f"{front_base}/events/{ev.id}?payment=failure",
-            "pending": f"{front_base}/events/{ev.id}?payment=pending",
-        },
-        notification_url=f"{str(request.base_url).rstrip('/')}/api/payments/mercadopago/webhook",
+        back_path=f"/events/{ev.id}",
+        request_base_url=str(request.base_url),
+        guild=db.get(Guild, ev.guild_id),
     )
     reg.mp_preference_id = pref.get("id")
     db.commit()
@@ -215,12 +206,11 @@ def admin_mark_paid(registration_id: int, db: DbDep, admin: AdminDep) -> EventRe
     if not reg:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Inscripción no encontrada")
     from app.models.base import PaymentStatus
-    from datetime import datetime as _dt, timezone as _tz
     if reg.payment_status == PaymentStatus.PAID:
         return reg
-    reg.payment_status = PaymentStatus.PAID
-    reg.paid_at = _dt.now(_tz.utc)
-    reg.payment_expires_at = None
+    # Punto único de mutación: mark_payment mantiene paid_at/expiry/reminder
+    reg = event_svc.mark_payment(db, registration_id=registration_id,
+                                 status_value=PaymentStatus.PAID)
     from app.services import audit
     ev = db.get(Event, reg.event_id)
     audit.log(
@@ -337,14 +327,19 @@ def event_finance(event_id: int, db: DbDep, admin: AdminDep) -> dict:
     )))
     price = int(ev.price_clp)
     by_status = {"PAID": 0, "PENDING": 0, "REFUNDED": 0, "CANCELLED": 0}
+    # Bulk aliases — evita N+1 con la página auto-refrescando cada 15s
+    player_ids = {r.player_id for r in regs}
+    alias_map = dict(db.execute(
+        select(PlayerProfile.id, PlayerProfile.alias)
+        .where(PlayerProfile.id.in_(player_ids))
+    ).all()) if player_ids else {}
     detail = []
     for r in regs:
         st = r.payment_status.value
         by_status[st] = by_status.get(st, 0) + 1
-        p = db.get(PlayerProfile, r.player_id)
         detail.append({
             "registration_id": r.id,
-            "alias": p.alias if p else f"#{r.player_id}",
+            "alias": alias_map.get(r.player_id, f"#{r.player_id}"),
             "payment_status": st,
             "paid_at": r.paid_at.isoformat() if r.paid_at else None,
             "mp_payment_id": r.mp_payment_id,
@@ -359,13 +354,16 @@ def event_finance(event_id: int, db: DbDep, admin: AdminDep) -> dict:
             EventWaitlist.promoted_at.is_(None),
         ).order_by(EventWaitlist.created_at)
     ))
+    wl_ids = {w.player_id for w in wl_entries}
+    wl_alias = dict(db.execute(
+        select(PlayerProfile.id, PlayerProfile.alias).where(PlayerProfile.id.in_(wl_ids))
+    ).all()) if wl_ids else {}
     waitlist = []
     for i, w in enumerate(wl_entries, start=1):
-        p = db.get(PlayerProfile, w.player_id)
         waitlist.append({
             "position": i,
             "player_id": w.player_id,
-            "alias": p.alias if p else f"#{w.player_id}",
+            "alias": wl_alias.get(w.player_id, f"#{w.player_id}"),
             "since": w.created_at.isoformat(),
         })
 

@@ -152,29 +152,14 @@ def premium_checkout(request: Request, current: UserDep, db: DbDep) -> dict:
     if prog and prog.is_premium:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ya tenés premium")
 
-    # Token MP: primer gremio con access_token configurado (mismo criterio que el webhook)
-    from app.models import Guild
-    guild = db.scalar(select(Guild).where(
-        Guild.mp_access_token.is_not(None), Guild.mp_access_token != "",
-    ))
     from app.services import mercadopago as mp_svc
-    from app.core.config import settings as _settings
-    front_base = _settings.frontend_url.rstrip("/")
-    pref = mp_svc.create_preference(
-        access_token=guild.mp_access_token if guild else "",
-        items=[{
-            "title": f"{bp.name} — Premium",
-            "quantity": 1,
-            "unit_price": int(bp.premium_price_clp),
-            "currency_id": "CLP",
-        }],
+    pref = mp_svc.create_checkout(
+        db,
+        title=f"{bp.name} — Premium",
+        unit_price_clp=int(bp.premium_price_clp),
         external_reference=f"bp:{current.profile.id}",
-        back_urls={
-            "success": f"{front_base}/battle-pass?payment=success",
-            "failure": f"{front_base}/battle-pass?payment=failure",
-            "pending": f"{front_base}/battle-pass?payment=pending",
-        },
-        notification_url=f"{str(request.base_url).rstrip('/')}/api/payments/mercadopago/webhook",
+        back_path="/battle-pass",
+        request_base_url=str(request.base_url),
     )
     return {
         "init_point": pref.get("init_point") or pref.get("sandbox_init_point") or "",

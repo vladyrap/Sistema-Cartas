@@ -28,6 +28,49 @@ def _backend() -> str:
     return "mock"
 
 
+def create_checkout(
+    db,
+    *,
+    title: str,
+    unit_price_clp: int,
+    external_reference: str,
+    back_path: str,
+    request_base_url: str,
+    guild=None,
+    quantity: int = 1,
+) -> dict:
+    """Helper único para los checkouts de la app (evento/battle pass/membresía).
+
+    Centraliza: selección de guild token (param o primer gremio con token),
+    back_urls (frontend_url + back_path + ?payment=estado) y notification_url.
+    Devuelve el dict de create_preference (init_point, id, mock).
+    """
+    from sqlalchemy import select
+    if guild is None:
+        from app.models import Guild
+        guild = db.scalar(select(Guild).where(
+            Guild.mp_access_token.is_not(None), Guild.mp_access_token != "",
+        ))
+    front = settings.frontend_url.rstrip("/")
+    sep = "&" if "?" in back_path else "?"
+    return create_preference(
+        access_token=(guild.mp_access_token if guild else "") or "",
+        items=[{
+            "title": title,
+            "quantity": quantity,
+            "unit_price": int(unit_price_clp),
+            "currency_id": "CLP",
+        }],
+        external_reference=external_reference,
+        back_urls={
+            "success": f"{front}{back_path}{sep}payment=success",
+            "failure": f"{front}{back_path}{sep}payment=failure",
+            "pending": f"{front}{back_path}{sep}payment=pending",
+        },
+        notification_url=f"{request_base_url.rstrip('/')}/api/payments/mercadopago/webhook",
+    )
+
+
 def create_preference(
     *,
     access_token: str | None,

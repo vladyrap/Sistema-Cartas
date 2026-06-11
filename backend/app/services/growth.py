@@ -262,6 +262,8 @@ def record_nemesis_match(db: Session, *, match: MatchResult) -> bool:
 def send_weekly_summaries(db: Session, *, limit: int = 200) -> int:
     """Lunes: resumen personalizado para jugadores activos (match en 30d).
     Notificación in-app con texto de Fable (o template en mock)."""
+    import bisect
+
     since = datetime.now(timezone.utc) - timedelta(days=30)
     active = list(db.scalars(
         select(PlayerRating).where(PlayerRating.last_match_at >= since)
@@ -275,33 +277,50 @@ def send_weekly_summaries(db: Session, *, limit: int = 200) -> int:
         Event.starts_at < datetime.now(timezone.utc) + timedelta(days=7),
     )) or 0
 
+    # Prefetch: ratings ordenados por juego (rival más cercano via bisect en
+    # memoria — 1 query total en vez de un scan ordenado por jugador) + aliases.
+    all_ratings = db.execute(
+        select(PlayerRating.game_id, PlayerRating.rating, PlayerRating.player_id)
+        .order_by(PlayerRating.game_id, PlayerRating.rating)
+    ).all()
+    by_game: dict[int, list[tuple[float, int]]] = {}
+    for gid, rating, pid in all_ratings:
+        by_game.setdefault(gid, []).append((rating, pid))
+    alias_by_id: dict[int, str] = dict(db.execute(
+        select(PlayerProfile.id, PlayerProfile.alias)
+    ).all())
+
+    def _closest_rival(game_id: int, rating: float, player_id: int) -> tuple[str, float] | None:
+        ladder = by_game.get(game_id, [])
+        keys = [x[0] for x in ladder]
+        i = bisect.bisect_left(keys, rating)
+        best = None
+        for j in range(max(0, i - 2), min(len(ladder), i + 3)):
+            rv, pid = ladder[j]
+            if pid == player_id:
+                continue
+            gap = abs(rv - rating)
+            if best is None or gap < best[1]:
+                best = (alias_by_id.get(pid), gap)
+        return best if best and best[0] else None
+
     for r in active:
         if r.player_id in seen:
             continue
         seen.add(r.player_id)
-        # Rival más cercano en rating (mismo juego)
-        rival = db.scalar(
-            select(PlayerRating).where(
-                PlayerRating.game_id == r.game_id,
-                PlayerRating.player_id != r.player_id,
-            ).order_by(func.abs(PlayerRating.rating - r.rating)).limit(1)
-        )
-        rival_alias = None
-        if rival:
-            rp = db.get(PlayerProfile, rival.player_id)
-            rival_alias = rp.alias if rp else None
+        rival = _closest_rival(r.game_id, r.rating, r.player_id)
 
         body = f"Rating {round(r.rating)}"
-        if rival_alias:
-            gap = round(abs(r.rating - rival.rating))
-            body += f" · {rival_alias} está a {gap} puntos de vos"
+        if rival:
+            rival_alias, gap = rival
+            body += f" · {rival_alias} está a {round(gap)} puntos de vos"
         if upcoming:
             body += f" · {upcoming} evento(s) esta semana"
         # Toque Fable si hay API key
         try:
             from app.services import ai_chat
             line = ai_chat.complete(
-                f"Jugador TCG con rating {round(r.rating)}. Rival cercano: {rival_alias or 'ninguno'}. "
+                f"Jugador TCG con rating {round(r.rating)}. Rival cercano: {rival[0] if rival else 'ninguno'}. "
                 f"{upcoming} eventos esta semana. Escribí UNA línea motivadora corta en español de Chile.",
                 system="Sos un coach de TCG. Una sola línea, sin emojis, máx 100 caracteres.",
                 max_tokens=60, creative=True,

@@ -83,6 +83,36 @@ def start_payment(reservation_id: int, request: Request, db: DbDep, current: Use
     )
 
 
+def _record_payment_event(
+    db, *, req_id: str | None, data_id, payment_status: str | None,
+    body, qp, kind: str | None = None, reservation_id: int | None = None,
+) -> bool:
+    """Idempotencia compartida de los 4 flujos del webhook.
+
+    Inserta el PaymentEvent; devuelve False si este evento ya fue procesado
+    (clave duplicada → el caller debe responder duplicate sin mutar nada).
+    """
+    idempotency_key = req_id or f"{data_id}:{payment_status}"
+    raw: dict = {"body": body, "qp": qp}
+    if kind:
+        raw["kind"] = kind
+    try:
+        db.add(PaymentEvent(
+            idempotency_key=idempotency_key,
+            x_request_id=req_id,
+            mp_payment_id=str(data_id),
+            mp_payment_status=payment_status,
+            reservation_id=reservation_id,
+            raw_body=json.dumps(raw, default=str)[:4000],
+        ))
+        db.flush()
+        return True
+    except IntegrityError:
+        db.rollback()
+        log.info("Webhook duplicado ignorado (key=%s kind=%s)", idempotency_key, kind)
+        return False
+
+
 @router.post("/mercadopago/webhook")
 async def mercadopago_webhook(request: Request, db: DbDep) -> dict:
     """Recibe notificaciones de MP. Valida firma + actualiza la reserva."""
@@ -139,19 +169,9 @@ async def mercadopago_webhook(request: Request, db: DbDep) -> dict:
             bp_player_id = int(ext_ref.split(":", 1)[1])
         except (IndexError, ValueError):
             return {"received": True, "ignored": "invalid_bp_reference"}
-        idempotency_key = req_id or f"{data_id}:{payment_status}"
-        try:
-            db.add(PaymentEvent(
-                idempotency_key=idempotency_key,
-                x_request_id=req_id,
-                mp_payment_id=str(data_id),
-                mp_payment_status=payment_status,
-                reservation_id=None,
-                raw_body=json.dumps({"body": body, "qp": qp, "kind": "battle_pass"}, default=str)[:4000],
-            ))
-            db.flush()
-        except IntegrityError:
-            db.rollback()
+        if not _record_payment_event(db, req_id=req_id, data_id=data_id,
+                                     payment_status=payment_status, body=body, qp=qp,
+                                     kind="battle_pass"):
             return {"received": True, "duplicate": True}
         if payment_status == "approved":
             from app.services import battle_pass as bp_svc
@@ -176,17 +196,9 @@ async def mercadopago_webhook(request: Request, db: DbDep) -> dict:
             sub_player_id = int(ext_ref.split(":", 1)[1])
         except (IndexError, ValueError):
             return {"received": True, "ignored": "invalid_sub_reference"}
-        idempotency_key = req_id or f"{data_id}:{payment_status}"
-        try:
-            db.add(PaymentEvent(
-                idempotency_key=idempotency_key, x_request_id=req_id,
-                mp_payment_id=str(data_id), mp_payment_status=payment_status,
-                reservation_id=None,
-                raw_body=json.dumps({"body": body, "qp": qp, "kind": "membership"}, default=str)[:4000],
-            ))
-            db.flush()
-        except IntegrityError:
-            db.rollback()
+        if not _record_payment_event(db, req_id=req_id, data_id=data_id,
+                                     payment_status=payment_status, body=body, qp=qp,
+                                     kind="membership"):
             return {"received": True, "duplicate": True}
         if payment_status == "approved":
             from app.core.config import settings as _settings
@@ -210,19 +222,9 @@ async def mercadopago_webhook(request: Request, db: DbDep) -> dict:
             evt_reg_id = int(ext_ref.split(":", 1)[1])
         except (IndexError, ValueError):
             return {"received": True, "ignored": "invalid_evt_reference"}
-        idempotency_key = req_id or f"{data_id}:{payment_status}"
-        try:
-            db.add(PaymentEvent(
-                idempotency_key=idempotency_key,
-                x_request_id=req_id,
-                mp_payment_id=str(data_id),
-                mp_payment_status=payment_status,
-                reservation_id=None,
-                raw_body=json.dumps({"body": body, "qp": qp, "kind": "event_registration"}, default=str)[:4000],
-            ))
-            db.flush()
-        except IntegrityError:
-            db.rollback()
+        if not _record_payment_event(db, req_id=req_id, data_id=data_id,
+                                     payment_status=payment_status, body=body, qp=qp,
+                                     kind="event_registration"):
             return {"received": True, "duplicate": True}
         from app.models import EventRegistration, Event as _Event
         from app.models.base import PaymentStatus as _PS
@@ -263,24 +265,11 @@ async def mercadopago_webhook(request: Request, db: DbDep) -> dict:
     except (TypeError, ValueError):
         return {"received": True, "ignored": "invalid_external_reference"}
 
-    # ── Idempotency check ──────────────────────────────────────────────
-    # Clave preferida: x-request-id del header (único por MP). Fallback:
-    # payment_id:status (sobrevive a reintentos del mismo evento).
-    idempotency_key = req_id or f"{data_id}:{payment_status}"
-    try:
-        db.add(PaymentEvent(
-            idempotency_key=idempotency_key,
-            x_request_id=req_id,
-            mp_payment_id=str(data_id),
-            mp_payment_status=payment_status,
-            reservation_id=reservation_id,
-            raw_body=json.dumps({"body": body, "qp": qp}, default=str)[:4000],
-        ))
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        log.info("Webhook duplicado ignorado (key=%s)", idempotency_key)
-        return {"received": True, "duplicate": True, "idempotency_key": idempotency_key}
+    # ── Idempotency check (reserva) ─────────────────────────────────────
+    if not _record_payment_event(db, req_id=req_id, data_id=data_id,
+                                 payment_status=payment_status, body=body, qp=qp,
+                                 kind="reservation", reservation_id=reservation_id):
+        return {"received": True, "duplicate": True}
 
     res = db.get(Reservation, reservation_id)
     if not res:
