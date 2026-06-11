@@ -63,6 +63,10 @@ from app.models.wordle import WordlePuzzle, WordleAttempt
 from app.models.card_swipe import CardSwipe
 from app.models.token_blocklist import RevokedToken
 from app.models.login_attempt import LoginAttempt
+from app.models.cardgrave import CardgraveEntry
+from app.models.tornado_event import TornadoEvent
+from app.models.bounty_contract import BountyContract
+from app.models.deck_roulette import DeckRouletteAssignment
 
 __all__ = [
     "Base",
@@ -136,4 +140,8 @@ __all__ = [
     "CardSwipe",
     "RevokedToken",
     "LoginAttempt",
+    "CardgraveEntry",
+    "TornadoEvent",
+    "BountyContract",
+    "DeckRouletteAssignment",
 ]

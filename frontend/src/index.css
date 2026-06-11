@@ -84,3 +84,19 @@ body {
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Neutralizar autofill de Chrome/Safari que mete fondo azul/blanco a los inputs.
+   Truco estándar: box-shadow inset transparente sobreescribe el background del UA,
+   text-fill-color mantiene el texto en blanco, y la transition larga evita
+   el flash de color al autocompletar. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+  -webkit-text-fill-color: rgb(var(--body-text)) !important;
+  caret-color: rgb(var(--body-text)) !important;
+  transition: background-color 99999s ease-in-out 0s, color 99999s ease-in-out 0s !important;
+}

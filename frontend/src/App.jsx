@@ -78,6 +78,11 @@ const Ceiling = lazy(() => import('./pages/Ceiling'));
 const SmackTalk = lazy(() => import('./pages/SmackTalk'));
 const ShopRadar = lazy(() => import('./pages/ShopRadar'));
 const DiscordCallback = lazy(() => import('./pages/DiscordCallback'));
+const Cardgrave = lazy(() => import('./pages/Cardgrave'));
+const TimelapseReplay = lazy(() => import('./pages/TimelapseReplay'));
+const TornadoFate = lazy(() => import('./pages/TornadoFate'));
+const BountyContracts = lazy(() => import('./pages/BountyContracts'));
+const DeckRoulette = lazy(() => import('./pages/DeckRoulette'));
 
 function RouteFallback() {
   return (
@@ -171,6 +176,11 @@ export default function App() {
         <Route path="/smack-talk" element={<SmackTalk />} />
         <Route path="/shop-radar" element={<ShopRadar />} />
         <Route path="/auth/discord/callback" element={<DiscordCallback />} />
+        <Route path="/cardgrave" element={<Cardgrave />} />
+        <Route path="/events/:id/timelapse" element={<TimelapseReplay />} />
+        <Route path="/tornado" element={<TornadoFate />} />
+        <Route path="/bounty-contracts" element={<BountyContracts />} />
+        <Route path="/deck-roulette" element={<DeckRoulette />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

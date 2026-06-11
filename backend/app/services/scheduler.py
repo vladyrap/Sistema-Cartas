@@ -127,6 +127,27 @@ def job_refresh_fx() -> None:
     fx.refresh()
 
 
+def job_fire_tornado() -> None:
+    """Dispara el Tornado of Fate diario para cada Gremio activo."""
+    from sqlalchemy import select
+    from app.core.db import SessionLocal
+    from app.models import Guild, GuildStatus
+    from app.routers.tornado import fire_tornado
+
+    db = SessionLocal()
+    try:
+        guilds = list(db.scalars(select(Guild).where(Guild.status == GuildStatus.ACTIVE)))
+        for g in guilds:
+            try:
+                fire_tornado(db, guild_id=g.id)
+            except Exception:
+                logger.exception("tornado fire failed for guild %s", g.id)
+    except Exception:
+        logger.exception("job_fire_tornado failed")
+    finally:
+        db.close()
+
+
 # ============================== Lifecycle ==============================
 
 
@@ -164,6 +185,11 @@ def start() -> None:
     _scheduler.add_job(
         job_refresh_fx, CronTrigger(hour=4, minute=30),
         id="refresh_fx", replace_existing=True,
+    )
+    # Tornado of Fate diario 12:00 UTC (≈ 9 AM hora Chile)
+    _scheduler.add_job(
+        job_fire_tornado, CronTrigger(hour=12, minute=0),
+        id="fire_tornado", replace_existing=True,
     )
     _scheduler.start()
     logger.info("scheduler started with %d jobs", len(_scheduler.get_jobs()))

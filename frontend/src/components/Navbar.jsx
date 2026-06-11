@@ -6,6 +6,7 @@ import {
   Map, Trophy, Activity as ActivityIcon, Radio, MoreHorizontal,
   Gift, ScanLine, Skull, Film, Wand2,
   Heart, Package, Puzzle, TrendingUp, Flame, ShoppingCart,
+  Wind, Dices, Coins,
 } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
 import { useGuild } from '../lib/useGuild';
@@ -175,14 +176,23 @@ function MoreMenu() {
         { to: '/pack', icon: Package, label: 'Pack Opening' },
         { to: '/wordle', icon: Puzzle, label: 'Card Wordle' },
         { to: '/card-of-day', icon: Wand2, label: 'Card of the Day' },
+        { to: '/tornado', icon: Wind, label: 'Tornado of Fate' },
+      ],
+    },
+    {
+      label: 'Bounty',
+      items: [
         { to: '/bounty', icon: Skull, label: 'Bounty del Campeón' },
+        { to: '/bounty-contracts', icon: Coins, label: 'Contratos P2P' },
       ],
     },
     {
       label: 'Diversión',
       items: [
         { to: '/tinder', icon: Heart, label: 'Cards Tinder' },
+        { to: '/deck-roulette', icon: Dices, label: 'Deck Roulette' },
         { to: '/smack-talk', icon: Flame, label: 'Smack Talk' },
+        { to: '/cardgrave', icon: Skull, label: 'Cardgrave' },
       ],
     },
     {
