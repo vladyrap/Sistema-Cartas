@@ -42,7 +42,7 @@ from app.routers import (
     polls, quantum, quests, rankings, ratings, realtime, referrals,
     reservations, scanner, sealed, search as search_router, seasons,
     smack_talk, spinner, streaks, tcg as tcg_router, timelapse, tinder,
-    tornado, uploads, voice, wishlist, wordle, wrapped,
+    tornado, tournament_pro, uploads, voice, wishlist, wordle, wrapped,
 )
 
 
@@ -350,6 +350,7 @@ app.include_router(documentary.router, prefix="/api", tags=["documentary"])
 app.include_router(quantum.router, prefix="/api/quantum", tags=["quantum"])
 app.include_router(quests.router, prefix="/api/quests", tags=["quests"])
 app.include_router(brain_io.router, prefix="/api/brain", tags=["brain-io"])
+app.include_router(tournament_pro.router, prefix="/api/tour-pro", tags=["tournament-pro"])
 app.include_router(gamification.router, prefix="/api", tags=["gamification"])
 app.include_router(gamification.admin_router, prefix="/api/admin/gamification", tags=["admin"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])

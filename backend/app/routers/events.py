@@ -308,23 +308,73 @@ def report_match_result(
 
 
 @router.post("/{event_id}/finalize", response_model=dict)
-def finalize_event(event_id: int, db: DbDep, admin: AdminDep) -> dict:
-    """Cierra el evento: calcula final_positions desde standings y dispara EXP automática.
+def finalize_event(event_id: int, db: DbDep, admin: AdminDep, force: bool = False) -> dict:
+    """Cierra el evento.
 
-    Atomic: si award_event_exp falla, las posiciones también se revierten (rollback).
-    Idempotencia: award_event_exp valida related_event_id para no acreditar dos veces.
+    Pre-finalize health check:
+      - Rechaza si hay matches sin reportar, disputas abiertas, MP inconsistentes
+      - Excepto si force=true (con audit log explícito)
+
+    Atomic: si award_event_exp falla, las posiciones también se revierten.
+    Idempotencia: award_event_exp valida related_event_id para no doble-acreditar.
+
+    Bonus: si hay rating snapshot pre-evento, se finaliza el snapshot con post_rating.
     """
+    from app.services import tournament_integrity, audit
     ev = db.get(Event, event_id)
     if not ev:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
+
+    health = tournament_integrity.validate_event(db, event_id)
+    if health.get("has_critical") and not force:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "error": "Evento no es finalizable — issues críticos",
+                "issues": [i for i in health["issues"] if i["severity"] == "critical"],
+                "hint": "Pasá ?force=true para sobreescribir (queda en audit log).",
+            },
+        )
+
     try:
         positions = tour_svc.finalize_positions(db, event_id=event_id)
         summary = event_svc.award_event_exp(db, event_id=event_id, admin_id=admin.id)
+        # Cerrar rating snapshots si existen
+        from app.models import EventRatingSnapshot, PlayerRating
+        snaps = list(db.scalars(select(EventRatingSnapshot).where(
+            EventRatingSnapshot.event_id == event_id,
+            EventRatingSnapshot.post_rating.is_(None),
+        )))
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        snaps_finalized = 0
+        for s in snaps:
+            rating = db.scalar(select(PlayerRating).where(
+                PlayerRating.player_id == s.player_id, PlayerRating.game_id == s.game_id,
+            ))
+            if rating:
+                s.post_rating = rating.rating
+                s.post_rd = rating.rd
+                s.post_volatility = rating.volatility
+                s.post_matches_played = rating.matches_played
+                s.finalized_at = now
+                snaps_finalized += 1
+        if force:
+            audit.log(
+                db, admin_id=admin.id, action="event.finalize_forced",
+                guild_id=ev.guild_id, target_kind="event", target_id=event_id,
+                payload={"warnings": [i["code"] for i in health["issues"] if i["severity"] == "critical"]},
+            )
         db.commit()
     except Exception:
         db.rollback()
         raise
     summary["positions_assigned"] = positions
+    summary["rating_snapshots_finalized"] = snaps_finalized
+    summary["health_at_finalize"] = {
+        "has_warnings": health.get("has_warnings"),
+        "integrity_hash": health.get("integrity_hash"),
+    }
     return summary
 
 

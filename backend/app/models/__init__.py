@@ -71,6 +71,10 @@ from app.models.archetype_devotion import ArchetypeDevotion
 from app.models.quantum_deck import QuantumDeck
 from app.models.quest import QuestArc, QuestStep, PlayerQuestProgress
 from app.models.brain_poll import BrainPoll, BrainVote
+from app.models.tournament_extras import (
+    MatchReport, MatchDispute, RoundTimer,
+    EventRatingSnapshot, EventPenalty,
+)
 
 __all__ = [
     "Base",
@@ -155,4 +159,9 @@ __all__ = [
     "PlayerQuestProgress",
     "BrainPoll",
     "BrainVote",
+    "MatchReport",
+    "MatchDispute",
+    "RoundTimer",
+    "EventRatingSnapshot",
+    "EventPenalty",
 ]

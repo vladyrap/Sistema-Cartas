@@ -93,6 +93,7 @@ const Documentary = lazy(() => import('./pages/Documentary'));
 const QuantumDeckPage = lazy(() => import('./pages/QuantumDeck'));
 const Quests = lazy(() => import('./pages/Quests'));
 const BrainIO = lazy(() => import('./pages/BrainIO'));
+const TournamentHealth = lazy(() => import('./pages/admin/TournamentHealth'));
 
 function RouteFallback() {
   return (
@@ -201,6 +202,7 @@ export default function App() {
         <Route path="/quantum" element={<QuantumDeckPage />} />
         <Route path="/quests" element={<Quests />} />
         <Route path="/events/:id/brain" element={<BrainIO />} />
+        <Route path="/admin/events/:id/health" element={<TournamentHealth />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
