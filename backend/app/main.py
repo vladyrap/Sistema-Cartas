@@ -37,12 +37,19 @@ from app.routers import (
     activity, admin, admin_crud, ai, announcements, auth, bounty,
     bounty_contracts, brain_io, card_drama, card_of_day, cardgrave, catalog,
     ceiling, checkin, constellation, cosmos, deck_dna, deck_roulette, decks,
+    battle_pass as battle_pass_router,
+    coming_soon as coming_soon_router,
+    competitive as competitive_router,
+    growth as growth_router,
+    meta_competitive as meta_competitive_router,
     devotion, discord as discord_router, documentary, events, gamification,
     guilds, integrations, notifications, pack_opening, payments, players,
     polls, quantum, quests, rankings, ratings, realtime, referrals,
     reservations, scanner, sealed, search as search_router, seasons,
-    smack_talk, spinner, streaks, tcg as tcg_router, timelapse, tinder,
-    tornado, tournament_pro, uploads, voice, wishlist, wordle, wrapped,
+    smack_talk, spinner, streaks, tcg as tcg_router, tcg_news as tcg_news_router, timelapse, tinder,
+    tornado, tournament_admin, tournament_flow, tournament_pro,
+    tournament_universe as tour_universe_router, uploads,
+    voice, wishlist, wordle, wrapped,
 )
 
 
@@ -351,6 +358,15 @@ app.include_router(quantum.router, prefix="/api/quantum", tags=["quantum"])
 app.include_router(quests.router, prefix="/api/quests", tags=["quests"])
 app.include_router(brain_io.router, prefix="/api/brain", tags=["brain-io"])
 app.include_router(tournament_pro.router, prefix="/api/tour-pro", tags=["tournament-pro"])
+app.include_router(tournament_flow.router, prefix="/api/tour-flow", tags=["tournament-flow"])
+app.include_router(tournament_admin.router, prefix="/api/tour-admin", tags=["tournament-admin"])
+app.include_router(tour_universe_router.router, prefix="/api/tour-univ", tags=["tournament-universe"])
+app.include_router(competitive_router.router, prefix="/api/competitive", tags=["competitive"])
+app.include_router(battle_pass_router.router, prefix="/api/battle-pass", tags=["battle-pass"])
+app.include_router(meta_competitive_router.router, prefix="/api/meta", tags=["meta-competitive"])
+app.include_router(growth_router.router, prefix="/api/growth", tags=["growth"])
+app.include_router(tcg_news_router.router, prefix="/api/news", tags=["news"])
+app.include_router(coming_soon_router.router, prefix="/api/coming-soon", tags=["coming-soon"])
 app.include_router(gamification.router, prefix="/api", tags=["gamification"])
 app.include_router(gamification.admin_router, prefix="/api/admin/gamification", tags=["admin"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])

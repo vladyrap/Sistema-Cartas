@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, EventStatus, EventType, TimestampMixin
@@ -32,3 +32,8 @@ class Event(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(String(2000))
     rules: Mapped[str | None] = mapped_column(String(2000))
     prizes: Mapped[str | None] = mapped_column(String(2000))
+
+    # Check-in window — minutos antes de starts_at
+    checkin_opens_minutes_before: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    checkin_closes_minutes_before: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    checkin_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

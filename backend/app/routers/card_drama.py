@@ -65,7 +65,7 @@ def get_drama(request: Request, card_a: str, card_b: str) -> DramaOut:
         return DramaOut(card_a=a, card_b=b, drama=_CACHE[key], cached=True)
 
     prompt = f"Cards:\n- {a}\n- {b}\n\nWrite the drama."
-    text = ai_chat.complete(prompt, system=SYSTEM, max_tokens=400).strip()
+    text = ai_chat.complete(prompt, system=SYSTEM, max_tokens=400, creative=True).strip()
     is_mock = text.startswith("[MOCK]") or text.startswith("[Error AI]")
 
     if not is_mock and text:

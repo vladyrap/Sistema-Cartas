@@ -6,7 +6,9 @@ en curso, el deck queda `is_locked` para auditoría.
 """
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -50,3 +52,8 @@ class PlayerDeck(Base, TimestampMixin):
     # Locked: ya se asoció a un EventRegistration y el evento empezó.
     # Mientras esté locked no se permite editar list_text/leader.
     is_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Hash SHA1 truncado de list_text al lock. Detecta modificación posterior.
+    list_hash: Mapped[str | None] = mapped_column(String(48))
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_for_event_id: Mapped[int | None] = mapped_column(Integer)

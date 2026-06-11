@@ -72,3 +72,8 @@ class MatchResult(Base, TimestampMixin):
     reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     notes: Mapped[str | None] = mapped_column(String(500))
+
+    # Intentional Draw — ambos players acuerdan empate (típico en last round Swiss)
+    is_intentional_draw: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    id_consented_by_a: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    id_consented_by_b: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

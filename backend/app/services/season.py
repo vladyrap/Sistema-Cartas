@@ -343,9 +343,19 @@ def activate_season(db: Session, season_id: int) -> dict:
     season.status = SeasonStatus.ACTIVE
     db.flush()
 
+    # Growth hook: asignar archienemigos de temporada (resiliente)
+    nemesis_pairs = 0
+    try:
+        from app.services import growth as growth_svc
+        nemesis_pairs = growth_svc.assign_nemeses_for_season(db, season_id=season.id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("nemesis assignment failed for season %s", season.id)
+
     return {
         "season_id": season.id,
         "season_number": season.number,
         "players_initialized": created,
         "promoted_to_duelista": promoted,
+        "nemesis_pairs": nemesis_pairs,
     }

@@ -484,6 +484,48 @@ def report_match(
         log.exception("apply_match_rating failed for match %s", match_id)
 
     invalidate_event_cache(m.event_id)
+
+    # Tournament Universe hooks — resilientes, NO rompen el match si fallan
+    try:
+        from app.services import tournament_universe as univ_svc
+        univ_svc.update_rivalry_on_match(db, match=m)
+        univ_svc.detect_achievements_on_match(db, match=m)
+        univ_svc.settle_match_predictions(db, match=m)
+        db.flush()
+    except Exception:
+        log.exception("tournament_universe hooks failed for match %s", match_id)
+
+    # Competitive robust hooks — bounty transfer on kill
+    try:
+        from app.services import competitive as cs
+        cs.transfer_bounty_on_kill(db, match=m)
+        db.flush()
+    except Exception:
+        log.exception("bounty transfer hook failed for match %s", match_id)
+
+    # Némesis: H2H + EXP doble si era tu archienemigo
+    try:
+        from app.services import growth as growth_svc
+        growth_svc.record_nemesis_match(db, match=m)
+    except Exception:
+        log.exception("nemesis hook failed for match %s", match_id)
+
+    # Battle Pass XP: 50 winner, 20 loser, 30 each on draw
+    try:
+        from app.services import battle_pass as bp_svc
+        if m.is_draw:
+            bp_svc.grant_bp_xp(db, player_id=m.player_a_id, amount=30, reason="match_draw")
+            if m.player_b_id:
+                bp_svc.grant_bp_xp(db, player_id=m.player_b_id, amount=30, reason="match_draw")
+        elif m.winner_id:
+            loser_id = m.player_a_id if m.winner_id == m.player_b_id else m.player_b_id
+            bp_svc.grant_bp_xp(db, player_id=m.winner_id, amount=50, reason="match_win")
+            if loser_id:
+                bp_svc.grant_bp_xp(db, player_id=loser_id, amount=20, reason="match_loss")
+        db.flush()
+    except Exception:
+        log.exception("battle_pass XP hook failed for match %s", match_id)
+
     rt.emit_match_reported(
         m.event_id, m.id, m.round_number,
         winner_id=m.winner_id, is_draw=m.is_draw,
@@ -529,6 +571,42 @@ def finalize_positions(db: Session, *, event_id: int) -> int:
         if reg:
             reg.final_position = s.rank
     db.flush()
+
+    # Tournament Universe — al finalizar, settle predicciones + achievements finales
+    try:
+        from app.services import tournament_universe as univ_svc
+        univ_svc.settle_champion_predictions(db, event_id=event_id)
+        univ_svc.detect_achievements_on_finalize(db, event_id=event_id)
+        db.flush()
+    except Exception:
+        log.exception("tournament_universe finalize hooks failed for event %s", event_id)
+
+    # Sponsor automation — paga ambassadors basado en final_position
+    try:
+        from app.services import competitive as cs
+        cs.pay_sponsor_bonuses(db, event_id=event_id)
+        db.flush()
+    except Exception:
+        log.exception("sponsor automation failed for event %s", event_id)
+
+    # Battle Pass XP: 200 champion, 100 top 8, 50 participation
+    try:
+        from app.services import battle_pass as bp_svc
+        regs = list(db.scalars(select(EventRegistration).where(
+            EventRegistration.event_id == event_id,
+            EventRegistration.final_position.is_not(None),
+        )))
+        for r in regs:
+            if r.final_position == 1:
+                bp_svc.grant_bp_xp(db, player_id=r.player_id, amount=200, reason="event_champion")
+            elif r.final_position <= 8:
+                bp_svc.grant_bp_xp(db, player_id=r.player_id, amount=100, reason="event_top8")
+            else:
+                bp_svc.grant_bp_xp(db, player_id=r.player_id, amount=50, reason="event_participation")
+        db.flush()
+    except Exception:
+        log.exception("battle_pass finalize hook failed for event %s", event_id)
+
     rt.emit_event_finalized(event_id, top_player_id=top_id)
     return len(standings)
 

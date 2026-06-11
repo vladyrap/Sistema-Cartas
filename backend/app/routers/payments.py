@@ -131,12 +131,137 @@ async def mercadopago_webhook(request: Request, db: DbDep) -> dict:
         return {"received": True, "resolved": False}
 
     ext_ref = payment.get("external_reference")
+    payment_status = payment.get("status")
+
+    # ── Battle Pass premium: external_reference = "bp:{player_id}" ─────
+    if isinstance(ext_ref, str) and ext_ref.startswith("bp:"):
+        try:
+            bp_player_id = int(ext_ref.split(":", 1)[1])
+        except (IndexError, ValueError):
+            return {"received": True, "ignored": "invalid_bp_reference"}
+        idempotency_key = req_id or f"{data_id}:{payment_status}"
+        try:
+            db.add(PaymentEvent(
+                idempotency_key=idempotency_key,
+                x_request_id=req_id,
+                mp_payment_id=str(data_id),
+                mp_payment_status=payment_status,
+                reservation_id=None,
+                raw_body=json.dumps({"body": body, "qp": qp, "kind": "battle_pass"}, default=str)[:4000],
+            ))
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            return {"received": True, "duplicate": True}
+        if payment_status == "approved":
+            from app.services import battle_pass as bp_svc
+            try:
+                bp_svc.purchase_premium(db, player_id=bp_player_id)
+                notif_svc.notify(
+                    db, player_id=bp_player_id,
+                    type="battle_pass_premium",
+                    title="Battle Pass Premium activado ✨",
+                    body="MercadoPago confirmó tu pago. Track premium desbloqueado.",
+                    link="/battle-pass",
+                )
+            except ValueError as e:
+                log.warning("BP premium webhook: %s", e)
+        db.commit()
+        return {"received": True, "kind": "battle_pass", "player_id": bp_player_id,
+                "payment_status": payment_status}
+
+    # ── Membresía: external_reference = "sub:{player_id}" ──────────────
+    if isinstance(ext_ref, str) and ext_ref.startswith("sub:"):
+        try:
+            sub_player_id = int(ext_ref.split(":", 1)[1])
+        except (IndexError, ValueError):
+            return {"received": True, "ignored": "invalid_sub_reference"}
+        idempotency_key = req_id or f"{data_id}:{payment_status}"
+        try:
+            db.add(PaymentEvent(
+                idempotency_key=idempotency_key, x_request_id=req_id,
+                mp_payment_id=str(data_id), mp_payment_status=payment_status,
+                reservation_id=None,
+                raw_body=json.dumps({"body": body, "qp": qp, "kind": "membership"}, default=str)[:4000],
+            ))
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            return {"received": True, "duplicate": True}
+        if payment_status == "approved":
+            from app.core.config import settings as _settings
+            paid_amount = payment.get("transaction_amount")
+            if paid_amount is not None and float(paid_amount) < _settings.membership_price_clp:
+                log.warning("sub payment %s monto %s < %s — ignorado",
+                            data_id, paid_amount, _settings.membership_price_clp)
+            else:
+                from app.services import growth as growth_svc
+                growth_svc.extend_membership(
+                    db, player_id=sub_player_id, days=30,
+                    source="mp", mp_payment_id=str(data_id),
+                )
+        db.commit()
+        return {"received": True, "kind": "membership",
+                "player_id": sub_player_id, "payment_status": payment_status}
+
+    # ── Inscripción a evento: external_reference = "evt:{registration_id}" ─
+    if isinstance(ext_ref, str) and ext_ref.startswith("evt:"):
+        try:
+            evt_reg_id = int(ext_ref.split(":", 1)[1])
+        except (IndexError, ValueError):
+            return {"received": True, "ignored": "invalid_evt_reference"}
+        idempotency_key = req_id or f"{data_id}:{payment_status}"
+        try:
+            db.add(PaymentEvent(
+                idempotency_key=idempotency_key,
+                x_request_id=req_id,
+                mp_payment_id=str(data_id),
+                mp_payment_status=payment_status,
+                reservation_id=None,
+                raw_body=json.dumps({"body": body, "qp": qp, "kind": "event_registration"}, default=str)[:4000],
+            ))
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            return {"received": True, "duplicate": True}
+        from app.models import EventRegistration, Event as _Event
+        from app.models.base import PaymentStatus as _PS
+        reg = db.get(EventRegistration, evt_reg_id)
+        if reg and payment_status == "approved" and reg.payment_status != _PS.PAID:
+            ev = db.get(_Event, reg.event_id)
+            # Anti-tampering: el monto pagado debe cubrir el precio del evento.
+            # Piso = precio con descuento de membresía aplicado (peor caso legítimo).
+            from app.core.config import settings as _settings
+            paid_amount = payment.get("transaction_amount")
+            full = int(ev.price_clp) if ev else 0
+            expected = max(1, full * (100 - _settings.membership_event_discount_pct) // 100) if full > 0 else 0
+            if paid_amount is not None and expected > 0 and float(paid_amount) < expected:
+                log.warning(
+                    "evt payment %s: monto %s < precio %s (reg %s) — NO se marca PAID",
+                    data_id, paid_amount, expected, evt_reg_id,
+                )
+                db.commit()
+                return {"received": True, "kind": "event_registration",
+                        "registration_id": evt_reg_id, "ignored": "amount_mismatch"}
+            reg.payment_status = _PS.PAID
+            reg.mp_payment_id = str(data_id)
+            reg.paid_at = datetime.now(timezone.utc)
+            reg.payment_expires_at = None
+            notif_svc.notify(
+                db, player_id=reg.player_id,
+                type="event_paid",
+                title="Inscripción pagada ✓",
+                body=f"MercadoPago confirmó tu pago para {ev.name if ev else 'el evento'}.",
+                link=f"/events/{reg.event_id}",
+            )
+        db.commit()
+        return {"received": True, "kind": "event_registration",
+                "registration_id": evt_reg_id, "payment_status": payment_status}
+
     try:
         reservation_id = int(ext_ref)
     except (TypeError, ValueError):
         return {"received": True, "ignored": "invalid_external_reference"}
-
-    payment_status = payment.get("status")
 
     # ── Idempotency check ──────────────────────────────────────────────
     # Clave preferida: x-request-id del header (único por MP). Fallback:

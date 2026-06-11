@@ -69,6 +69,27 @@ def validate_event(db: Session, event_id: int) -> dict[str, Any]:
             "ids": [d.id for d in open_disputes],
         })
 
+    # ── 2b. Pagos pendientes en evento pago (plata sin cobrar)
+    if int(ev.price_clp) > 0:
+        from app.models.base import PaymentStatus as _PS
+        unpaid = list(db.scalars(
+            select(EventRegistration).where(
+                EventRegistration.event_id == event_id,
+                EventRegistration.payment_status == _PS.PENDING,
+            )
+        ))
+        if unpaid:
+            issues.append({
+                "code": "registrations_unpaid",
+                "severity": "warning",
+                "count": len(unpaid),
+                "message": (
+                    f"{len(unpaid)} inscripción(es) sin pagar "
+                    f"(${len(unpaid) * int(ev.price_clp):,} CLP sin cobrar)".replace(",", ".")
+                ),
+                "ids": [r.id for r in unpaid[:10]],
+            })
+
     # ── 3. Sumatoria match_points consistente
     regs = list(db.scalars(select(EventRegistration).where(EventRegistration.event_id == event_id)))
     inconsistent_mp = []

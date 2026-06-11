@@ -113,7 +113,7 @@ def generate(request: Request, opponent_id: int, current: UserDep, db: DbDep) ->
     prompt = (
         f"Generate 3 pre-match taunts. Context:\n{json.dumps(ctx, ensure_ascii=False, indent=2)}"
     )
-    data = ai_chat.complete_json(prompt, system=SYSTEM, max_tokens=400)
+    data = ai_chat.complete_json(prompt, system=SYSTEM, max_tokens=400, creative=True)
 
     taunts = data.get("taunts") if isinstance(data, dict) else None
     is_mock = bool(data.get("error") == "parse" or not taunts)

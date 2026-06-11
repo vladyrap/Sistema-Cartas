@@ -42,3 +42,17 @@ class PlayerRating(Base, TimestampMixin):
 
     # Pico histórico (para vanity / hall of fame).
     peak_rating: Mapped[float] = mapped_column(Float, nullable=False, default=1500.0)
+    # Freeze: ranked decay no aplica mientras esté frozen (un budget de días)
+    freeze_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Promotion series: cuando el rating cruza el threshold superior del tier,
+    # entra a una serie de 3 partidas. Si gana 2/3 → promueve. Si pierde 2/3 → no.
+    promo_series_wins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    promo_series_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    promo_series_target_tier: Mapped[str | None] = mapped_column(__import__('sqlalchemy').String(20))
+
+    # Demotion shield: tras promoción, próxima loss no demuele (queda en lo justo del tier nuevo)
+    demotion_shield_active: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    # Trust score: interno (0.0 a 1.0). Empieza en 1.0, baja con disputas/penalties/no-shows.
+    trust_score: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)

@@ -143,6 +143,26 @@ def emit_player_dropped(event_id: int, player_id: int, alias: str | None = None)
     })
 
 
+def emit_pairing_swapped(event_id: int, round_number: int) -> None:
+    """Admin movió jugadores entre mesas — clientes deben refrescar pairings."""
+    manager.broadcast_sync(event_channel(event_id), {
+        "type": "pairing_swapped",
+        "event_id": event_id,
+        "round_number": round_number,
+    })
+
+
+def emit_timer_event(event_id: int, round_number: int, action: str, remaining_seconds: int | None = None) -> None:
+    """action: started | paused | resumed | extended | finished"""
+    manager.broadcast_sync(event_channel(event_id), {
+        "type": "timer_event",
+        "event_id": event_id,
+        "round_number": round_number,
+        "action": action,
+        "remaining_seconds": remaining_seconds,
+    })
+
+
 def emit_event_finalized(event_id: int, top_player_id: int | None = None) -> None:
     manager.broadcast_sync(event_channel(event_id), {
         "type": "event_finalized",

@@ -29,6 +29,25 @@ EXP_RULES: dict[str, int] = {
     "unsportsmanlike": -200,
     # Bonus dinámico — el amount lo calcula el caller, no hay default.
     "streak_bonus": 0,
+    # Tournament Universe — amounts dinámicos
+    "achievement": 0,
+    "prediction_win": 0,
+    "prediction_champion": 0,
+    "prediction_refund": 0,
+    "prediction_stake": 0,
+    "duel_win": 0,
+    "duel_stake": 0,
+    "duel_refund": 0,
+    "sponsor_bonus": 0,
+    "guild_war_win": 0,
+    "battle_pass_reward": 0,
+    "auction_stake": 0,
+    "auction_refund": 0,
+    "mercenary_hire": 0,
+    "mercenary_pay": 0,
+    "coach_book": 0,
+    "coach_earn": 0,
+    "nemesis_bonus": 0,
 }
 
 

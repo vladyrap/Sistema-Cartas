@@ -46,8 +46,13 @@ def _mock_response(prompt: str, system: str | None) -> str:
     return "[MOCK] AI response. Configura ANTHROPIC_API_KEY para usar Claude API real."
 
 
-def complete(prompt: str, *, system: str | None = None, max_tokens: int = 1024) -> str:
-    """Llama al LLM y devuelve el texto de la respuesta."""
+def complete(prompt: str, *, system: str | None = None, max_tokens: int = 1024,
+             creative: bool = False) -> str:
+    """Llama al LLM y devuelve el texto de la respuesta.
+
+    creative=True usa anthropic_creative_model (Fable) — para prosa: storylines,
+    epitafios, microficción, narración. False usa el modelo general (análisis).
+    """
     if settings.ai_backend == "mock" or not settings.anthropic_api_key:
         return _mock_response(prompt, system)
 
@@ -63,9 +68,10 @@ def complete(prompt: str, *, system: str | None = None, max_tokens: int = 1024) 
         return _mock_response(prompt, system)
 
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    model = settings.anthropic_creative_model if creative else settings.anthropic_model
     try:
         msg = client.messages.create(
-            model=settings.anthropic_model,
+            model=model,
             max_tokens=max_tokens,
             system=system or "",
             messages=[{"role": "user", "content": prompt}],
@@ -82,12 +88,13 @@ def complete(prompt: str, *, system: str | None = None, max_tokens: int = 1024) 
         return f"[Error AI] {type(e).__name__}: {e}"
 
 
-def complete_json(prompt: str, *, system: str | None = None, max_tokens: int = 1024) -> dict[str, Any]:
+def complete_json(prompt: str, *, system: str | None = None, max_tokens: int = 1024,
+                  creative: bool = False) -> dict[str, Any]:
     """Igual que complete() pero parsea la respuesta como JSON.
 
     Si falla el parsing, devuelve {"raw": text, "error": "parse"}.
     """
-    text = complete(prompt, system=system, max_tokens=max_tokens)
+    text = complete(prompt, system=system, max_tokens=max_tokens, creative=creative)
     # Defensa: a veces Claude envuelve el JSON en ```json ... ```
     t = text.strip()
     if t.startswith("```"):

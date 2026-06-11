@@ -195,7 +195,12 @@ class EventOut(BaseModel):
     registered_count: int = 0
     price_clp: int
     description: str | None = None
+    rules: str | None = None
+    prizes: str | None = None
     is_registered: bool = False  # True si el jugador autenticado está inscrito
+    my_registration_id: int | None = None
+    my_payment_status: str | None = None  # PENDING | PAID | CANCELLED | REFUNDED
+    my_payment_expires_at: datetime | None = None  # cupo reservado hasta acá si PENDING
 
 
 class EventRegistrationOut(BaseModel):
@@ -214,6 +219,10 @@ class EventRegistrationOut(BaseModel):
     games_lost: int = 0
     match_points: int = 0
     dropped: bool = False
+    checked_in_at: datetime | None = None
+    checkin_method: str | None = None
+    paid_at: datetime | None = None
+    payment_expires_at: datetime | None = None
 
 
 class EventRegistrationWithPlayer(BaseModel):

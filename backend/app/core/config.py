@@ -45,7 +45,15 @@ class Settings(BaseSettings):
     # AI backend: "anthropic" (Claude API), "mock" (respuestas canned para dev)
     ai_backend: str = "mock"
     anthropic_api_key: str = ""
+    # Modelo general — análisis estructurado (deck analyzer, matchups, voice parsing)
     anthropic_model: str = "claude-sonnet-4-6"
+    # Modelo creativo — narrativa (storylines, card drama, epitafios, documentary).
+    # Fable está optimizado para prosa; si no está disponible en tu cuenta,
+    # apuntá esto al mismo valor que anthropic_model.
+    anthropic_creative_model: str = "claude-fable-5"
+    # Membresía mensual de tienda (30 días por pago) + descuento en entradas
+    membership_price_clp: int = 5990
+    membership_event_discount_pct: int = 10
     # MercadoPago: secret para validar firma del webhook (global, del panel MP).
     # Cada Gremio tiene su access_token propio en guilds.mp_access_token.
     mp_webhook_secret: str = ""

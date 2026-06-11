@@ -92,18 +92,43 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="max-w-6xl mx-auto px-6 py-8">
-        <header className="mb-6 flex items-end justify-between flex-wrap gap-3">
-          <div>
-            <p className="text-[10px] tracking-[0.4em] uppercase text-white/40 font-bold">
-              {season_name || 'Sin temporada activa'}
-            </p>
-            <h1 className="font-display text-3xl font-bold mt-1">Hola, {player.alias}</h1>
+        {/* Welcome hero — avatar + alias + seasonal context */}
+        <motion.header
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="relative mb-8 p-6 rounded-3xl glass aurora-bg grain overflow-hidden"
+        >
+          <div className="relative flex items-center gap-5 flex-wrap">
+            <div className="relative">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-elite-violet to-elite-blue blur-xl opacity-60" />
+              {player.avatar_url ? (
+                <img src={player.avatar_url} alt="" className="relative w-20 h-20 rounded-full ring-2 ring-elite-violet/60 object-cover" />
+              ) : (
+                <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-elite-violet to-elite-blue ring-2 ring-elite-violet/60 grid place-items-center font-display text-3xl font-black">
+                  {player.alias?.[0]?.toUpperCase() || '?'}
+                </div>
+              )}
+              <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-bg-elevated ring-2 ring-bg grid place-items-center text-xs font-bold text-elite-gold">
+                {progress?.level ?? 1}
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] tracking-[0.4em] uppercase text-white/40 font-bold mb-1">
+                {season_name || 'Sin temporada activa'}
+              </p>
+              <h1 className="font-display text-3xl md:text-4xl font-extrabold">
+                Hola, <span className="text-gradient">{player.alias}</span>
+              </h1>
+              <p className="text-sm text-white/50 mt-1">
+                Rango actual · <span className="text-white font-semibold">{RANK_COLORS[progress?.current_rank || 'INICIADO']?.label || 'Iniciado'}</span>
+              </p>
+            </div>
+            <button onClick={() => setEditOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl glass-strong hover:border-elite-violet/40 text-sm transition">
+              <Edit3 size={14} /> Editar perfil
+            </button>
           </div>
-          <button onClick={() => setEditOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-sm transition">
-            <Edit3 size={14} /> Editar perfil
-          </button>
-        </header>
+        </motion.header>
 
         {/* HERO: Active Deck + Top Rating + Próximo Evento + Último Match */}
         <div className="grid lg:grid-cols-[1.4fr_1fr] gap-5 mb-6">
@@ -415,17 +440,23 @@ function LastMatchCard({ playerId, games }) {
 }
 
 function MiniStat({ label, value, icon: Icon, accent }) {
-  const c = {
-    violet: 'text-violet-300', cyan: 'text-cyan-300',
-    emerald: 'text-emerald-300', amber: 'text-amber-300',
+  const meta = {
+    violet:  { txt: 'text-violet-300',  ring: 'hover:shadow-violet-500/30',  bar: 'from-violet-500 to-fuchsia-500' },
+    cyan:    { txt: 'text-cyan-300',    ring: 'hover:shadow-cyan-500/30',    bar: 'from-cyan-500 to-blue-500' },
+    emerald: { txt: 'text-emerald-300', ring: 'hover:shadow-emerald-500/30', bar: 'from-emerald-500 to-teal-500' },
+    amber:   { txt: 'text-amber-300',   ring: 'hover:shadow-amber-500/30',   bar: 'from-amber-500 to-orange-500' },
   }[accent];
   return (
-    <div className="rounded-xl bg-bg-surface border border-bg-border p-3">
-      <div className={`text-[9px] uppercase tracking-widest font-bold mb-1 flex items-center gap-1 ${c}`}>
+    <motion.div
+      whileHover={{ y: -2 }}
+      className={`group relative rounded-xl bg-bg-surface border border-bg-border p-3 overflow-hidden transition-shadow shadow-lg ${meta.ring}`}
+    >
+      <div className={`absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r ${meta.bar} opacity-60 group-hover:opacity-100 transition-opacity`} />
+      <div className={`text-[9px] uppercase tracking-widest font-bold mb-1 flex items-center gap-1 ${meta.txt}`}>
         <Icon size={10} /> {label}
       </div>
       <div className="text-2xl font-black tabular-nums">{value}</div>
-    </div>
+    </motion.div>
   );
 }
 

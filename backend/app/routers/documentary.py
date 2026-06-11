@@ -48,7 +48,7 @@ class DocumentaryOut(BaseModel):
 
 def _narrate(prompt: str, fallback: str) -> str:
     try:
-        text = ai_chat.complete(prompt, system=NARRATOR_SYSTEM, max_tokens=120).strip()
+        text = ai_chat.complete(prompt, system=NARRATOR_SYSTEM, max_tokens=120, creative=True).strip()
         if not text or text.startswith("[MOCK]") or text.startswith("[Error AI]"):
             return fallback
         return text[:200]

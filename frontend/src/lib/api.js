@@ -9,6 +9,9 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('ec_access_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // Normalización: baseURL ya es '/api' — si el caller pasó '/api/x',
+  // evitamos el doble prefijo '/api/api/x'.
+  if (config.url?.startsWith('/api/')) config.url = config.url.slice(4);
   // Trazabilidad: si el server inyecta X-Request-Id en la response, lo logueamos
   config.metadata = { startedAt: Date.now() };
   return config;

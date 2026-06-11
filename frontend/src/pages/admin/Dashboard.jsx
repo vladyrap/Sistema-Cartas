@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Users, Sparkles, ChevronRight, Trophy, Package, Award, Zap, Gamepad2, ShoppingBag, UserPlus, Crown, Settings, Activity } from 'lucide-react';
+import { Calendar, Users, Sparkles, ChevronRight, Trophy, Package, Award, Zap, Gamepad2, ShoppingBag, UserPlus, Crown, Settings, Activity, Construction, Gavel } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/useAuth';
@@ -21,6 +21,10 @@ const GUILD_SCOPED_CARDS = [
 const GLOBAL_CARDS = [
   { to: '/admin/players', icon: Users, label: 'Jugadores', desc: 'Editar perfil · cambiar rol · ajustar EXP', color: 'text-emerald-400' },
   { to: '/admin/games', icon: Gamepad2, label: 'Juegos', desc: 'TCG soportados', color: 'text-white/70' },
+  { to: '/admin/coming-soon', icon: Construction, label: 'Coming Soon', desc: 'Marcar páginas en construcción con overlay TCG', color: 'text-amber-300' },
+  { to: '/admin/duels', icon: Gavel, label: 'Duelos disputas', desc: 'Resolver reportes incompatibles + collusion flags', color: 'text-rose-300' },
+  { to: '/admin/battle-pass', icon: Sparkles, label: 'Battle Pass', desc: 'Editor del pase competitivo (tiers + rewards)', color: 'text-violet-300' },
+  { to: '/admin/growth', icon: Activity, label: 'Crecimiento', desc: 'Salud de comunidad · cupones · botín físico', color: 'text-emerald-300' },
 ];
 
 const MAESTRO_CARDS = [

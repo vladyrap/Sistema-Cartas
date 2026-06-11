@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
+import ComingSoonGate from './components/ComingSoonGate';
 
 // Eager: landing + auth — son la primera pantalla, no las lazyfeeamos
 import Landing from './pages/Landing';
@@ -94,6 +95,26 @@ const QuantumDeckPage = lazy(() => import('./pages/QuantumDeck'));
 const Quests = lazy(() => import('./pages/Quests'));
 const BrainIO = lazy(() => import('./pages/BrainIO'));
 const TournamentHealth = lazy(() => import('./pages/admin/TournamentHealth'));
+const EventCheckin = lazy(() => import('./pages/EventCheckin'));
+const AdminCheckinDesk = lazy(() => import('./pages/admin/AdminCheckinDesk'));
+const EventTimeline = lazy(() => import('./pages/admin/EventTimeline'));
+const EventSpectate = lazy(() => import('./pages/EventSpectate'));
+const PairingControl = lazy(() => import('./pages/admin/PairingControl'));
+const TcgNews = lazy(() => import('./pages/TcgNews'));
+const AdminComingSoon = lazy(() => import('./pages/admin/AdminComingSoon'));
+const TournamentUniverse = lazy(() => import('./pages/TournamentUniverse'));
+const Competitive = lazy(() => import('./pages/Competitive'));
+const AdminDuels = lazy(() => import('./pages/admin/AdminDuels'));
+const BattlePass = lazy(() => import('./pages/BattlePass'));
+const AdminBattlePass = lazy(() => import('./pages/admin/AdminBattlePass'));
+const MetaCompetitive = lazy(() => import('./pages/MetaCompetitive'));
+const AdminEventFinance = lazy(() => import('./pages/admin/AdminEventFinance'));
+const Membership = lazy(() => import('./pages/Membership'));
+const Loot = lazy(() => import('./pages/Loot'));
+const AdminGrowth = lazy(() => import('./pages/admin/AdminGrowth'));
+const TradeLog = lazy(() => import('./pages/TradeLog'));
+const DeckOCR = lazy(() => import('./pages/DeckOCR'));
+const Kiosk = lazy(() => import('./pages/Kiosk'));
 
 function RouteFallback() {
   return (
@@ -114,6 +135,7 @@ function RouteFallback() {
 export default function App() {
   return (
     <Suspense fallback={<RouteFallback />}>
+      <ComingSoonGate>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -203,8 +225,30 @@ export default function App() {
         <Route path="/quests" element={<Quests />} />
         <Route path="/events/:id/brain" element={<BrainIO />} />
         <Route path="/admin/events/:id/health" element={<TournamentHealth />} />
+        <Route path="/events/:id/checkin" element={<EventCheckin />} />
+        <Route path="/admin/events/:id/checkin-desk" element={<AdminCheckinDesk />} />
+        <Route path="/admin/events/:id/timeline" element={<EventTimeline />} />
+        <Route path="/events/:id/spectate" element={<EventSpectate />} />
+        <Route path="/admin/events/:id/pairings" element={<PairingControl />} />
+        <Route path="/news" element={<TcgNews />} />
+        <Route path="/tcg-news" element={<TcgNews />} />
+        <Route path="/admin/coming-soon" element={<AdminComingSoon />} />
+        <Route path="/events/:id/universe" element={<TournamentUniverse />} />
+        <Route path="/competitive" element={<Competitive />} />
+        <Route path="/admin/duels" element={<AdminDuels />} />
+        <Route path="/battle-pass" element={<BattlePass />} />
+        <Route path="/admin/battle-pass" element={<AdminBattlePass />} />
+        <Route path="/meta" element={<MetaCompetitive />} />
+        <Route path="/admin/events/:id/finance" element={<AdminEventFinance />} />
+        <Route path="/membership" element={<Membership />} />
+        <Route path="/loot" element={<Loot />} />
+        <Route path="/admin/growth" element={<AdminGrowth />} />
+        <Route path="/trade-log" element={<TradeLog />} />
+        <Route path="/deck-ocr" element={<DeckOCR />} />
+        <Route path="/events/:id/kiosk" element={<Kiosk />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </ComingSoonGate>
     </Suspense>
   );
 }

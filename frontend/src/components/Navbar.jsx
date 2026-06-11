@@ -8,7 +8,7 @@ import {
   Heart, Package, Puzzle, TrendingUp, Flame, ShoppingCart,
   Wind, Dices, Coins,
   GitBranch, Mic, Drama,
-  Globe2, Atom, Scroll, Brain,
+  Globe2, Atom, Scroll, Brain, Newspaper, Swords,
 } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
 import { useGuild } from '../lib/useGuild';
@@ -36,9 +36,22 @@ export default function Navbar() {
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const accent = current?.guild?.accent_color || null;
 
+  // Scroll-aware: cuando scrolleas, el navbar se condensa con más blur
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   return (
     <header
-      className="sticky top-0 z-40 border-b border-bg-border bg-bg/80 backdrop-blur-xl"
+      className={`sticky top-0 z-40 border-b transition-all duration-300 ${
+        scrolled
+          ? 'border-bg-border bg-bg/85 backdrop-blur-2xl shadow-lg shadow-black/30'
+          : 'border-bg-border/40 bg-bg/50 backdrop-blur-xl'
+      }`}
       style={accent ? { boxShadow: `inset 0 -1px 0 ${accent}` } : undefined}
     >
       {accent && (
@@ -50,17 +63,18 @@ export default function Navbar() {
       )}
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-14 flex items-center gap-4">
         {/* Logo — marca producto fija (el nombre del guild va en el switcher) */}
-        <Link to="/" className="flex items-center gap-2 shrink-0">
+        <Link to="/" className="flex items-center gap-2 shrink-0 group">
           <div
-            className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
+            className={`relative w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
               accent ? '' : 'bg-gradient-to-br from-elite-violet to-elite-blue'
-            }`}
+            } group-hover:scale-110 transition-transform duration-300`}
             style={accent ? { background: `linear-gradient(135deg, ${accent}, ${accent}aa)` } : undefined}
           >
-            <Sparkles size={14} className="text-white" />
+            <span className="absolute inset-0 rounded-lg bg-elite-violet/40 blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
+            <Sparkles size={15} className="text-white relative z-10" />
           </div>
           <span className="font-display font-bold tracking-tight whitespace-nowrap hidden sm:inline">
-            EliteCards
+            Elite<span className="text-gradient">Cards</span>
           </span>
         </Link>
 
@@ -166,6 +180,11 @@ function MoreMenu() {
       label: 'Explorar',
       items: [
         { to: '/leaderboard', icon: Radio, label: 'Live' },
+        { to: '/competitive', icon: Swords, label: 'Competitive Hub' },
+        { to: '/battle-pass', icon: Sparkles, label: 'Battle Pass' },
+        { to: '/meta', icon: Brain, label: 'Meta Hub' },
+        { to: '/membership', icon: Crown, label: 'Membresía Elite' },
+        { to: '/news', icon: Newspaper, label: 'Noticias TCG' },
         { to: '/hall-of-fame', icon: Trophy, label: 'Hall of Fame' },
         { to: '/activity', icon: ActivityIcon, label: 'Actividad' },
         { to: '/tour', icon: Map, label: 'Tour guiado' },

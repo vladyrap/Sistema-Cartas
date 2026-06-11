@@ -79,7 +79,9 @@ def _validate_deck_for_event(
 def register_player(
     db: Session, *, event_id: int, player_id: int, deck_id: int | None = None
 ) -> EventRegistration:
-    ev = db.get(Event, event_id)
+    # Pessimistic lock sobre el evento: dos registros simultáneos no pueden
+    # pasar ambos el slot check (no-op en SQLite single-writer; real en PG).
+    ev = db.scalar(select(Event).where(Event.id == event_id).with_for_update())
     if not ev:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
     _ensure_event_open(ev)
@@ -102,13 +104,26 @@ def register_player(
     if deck_id is not None:
         _validate_deck_for_event(db, deck_id=deck_id, player_id=player_id, event=ev)
 
+    now = datetime.now(timezone.utc)
+    # Eventos pagos: el cupo se reserva 24h (o hasta 1h antes del inicio, lo
+    # que llegue primero). El scheduler libera los impagos vencidos.
+    expires = None
+    if int(ev.price_clp) > 0:
+        from datetime import timedelta as _td
+        starts = ev.starts_at if ev.starts_at.tzinfo else ev.starts_at.replace(tzinfo=timezone.utc)
+        expires = min(now + _td(hours=24), starts - _td(hours=1))
+        if expires <= now:
+            # Evento arranca en <1h: margen mínimo de 30 min para pagar
+            expires = now + _td(minutes=30)
+
     reg = EventRegistration(
         event_id=event_id,
         player_id=player_id,
         deck_id=deck_id,
         payment_status=PaymentStatus.PENDING if ev.price_clp > 0 else PaymentStatus.PAID,
         attendance_status=AttendanceStatus.PENDING,
-        registered_at=datetime.now(timezone.utc),
+        registered_at=now,
+        payment_expires_at=expires,
     )
     db.add(reg)
     db.flush()
@@ -196,8 +211,127 @@ def cancel_registration(
             status.HTTP_400_BAD_REQUEST,
             "No se puede cancelar una inscripción de un evento finalizado",
         )
+    event_id = reg.event_id
     db.delete(reg)
     db.flush()
+    # Cupo liberado → promover al primero de la waitlist (resiliente)
+    try:
+        promote_from_waitlist(db, event_id=event_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("waitlist promote failed for event %s", event_id)
+    return reg
+
+
+# ============================== Waitlist ==============================
+
+
+def join_waitlist(db: Session, *, event_id: int, player_id: int) -> "EventWaitlist":
+    """Anota al jugador en la lista de espera de un evento lleno."""
+    from app.models import EventWaitlist
+    ev = db.get(Event, event_id)
+    if not ev:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
+    _ensure_event_open(ev)
+    if _slots_taken(db, event_id) < ev.slots:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Hay cupos disponibles — inscribite directo")
+    already_reg = db.scalar(select(EventRegistration).where(
+        EventRegistration.event_id == event_id,
+        EventRegistration.player_id == player_id,
+    ))
+    if already_reg:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya estás inscrito en este evento")
+    already_wl = db.scalar(select(EventWaitlist).where(
+        EventWaitlist.event_id == event_id,
+        EventWaitlist.player_id == player_id,
+        EventWaitlist.promoted_at.is_(None),
+    ))
+    if already_wl:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya estás en la lista de espera")
+    entry = EventWaitlist(event_id=event_id, player_id=player_id)
+    db.add(entry)
+    db.flush()
+    return entry
+
+
+def leave_waitlist(db: Session, *, event_id: int, player_id: int) -> None:
+    from app.models import EventWaitlist
+    entry = db.scalar(select(EventWaitlist).where(
+        EventWaitlist.event_id == event_id,
+        EventWaitlist.player_id == player_id,
+        EventWaitlist.promoted_at.is_(None),
+    ))
+    if not entry:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No estás en la lista de espera")
+    db.delete(entry)
+    db.flush()
+
+
+def promote_from_waitlist(db: Session, *, event_id: int) -> "EventRegistration | None":
+    """Si hay cupo libre y gente esperando, promueve al primero (FIFO).
+
+    Crea la EventRegistration con la misma política de pago que un registro
+    normal (PENDING + expiración si el evento es pago) y notifica al jugador.
+    Devuelve la registration creada o None si no había nada que hacer.
+    """
+    from app.models import EventWaitlist
+    ev = db.get(Event, event_id)
+    if not ev or ev.status not in (EventStatus.DRAFT, EventStatus.OPEN):
+        return None
+    if _slots_taken(db, event_id) >= ev.slots:
+        return None
+    # FIFO con prioridad para members: miembros activos primero, luego orden de llegada
+    pending = list(db.scalars(
+        select(EventWaitlist).where(
+            EventWaitlist.event_id == event_id,
+            EventWaitlist.promoted_at.is_(None),
+        ).order_by(EventWaitlist.created_at)
+    ))
+    if not pending:
+        return None
+    try:
+        from app.services import growth as growth_svc
+        pending.sort(key=lambda e: (not growth_svc.is_member(db, e.player_id),))
+    except Exception:
+        pass  # sin growth, FIFO puro
+    entry = pending[0]
+
+    now = datetime.now(timezone.utc)
+    expires = None
+    if int(ev.price_clp) > 0:
+        from datetime import timedelta as _td
+        starts = ev.starts_at if ev.starts_at.tzinfo else ev.starts_at.replace(tzinfo=timezone.utc)
+        expires = min(now + _td(hours=24), starts - _td(hours=1))
+        if expires <= now:
+            expires = now + _td(minutes=30)
+
+    reg = EventRegistration(
+        event_id=event_id,
+        player_id=entry.player_id,
+        payment_status=PaymentStatus.PENDING if ev.price_clp > 0 else PaymentStatus.PAID,
+        attendance_status=AttendanceStatus.PENDING,
+        registered_at=now,
+        payment_expires_at=expires,
+    )
+    db.add(reg)
+    entry.promoted_at = now
+    db.flush()
+
+    try:
+        from app.services import notifications as notif_svc
+        body = f"Se liberó un cupo en {ev.name} y entraste automáticamente."
+        if expires:
+            body += " Tenés plazo limitado para pagar tu entrada — revisá el evento."
+        notif_svc.notify(
+            db, player_id=entry.player_id,
+            type="waitlist_promoted",
+            title="¡Entraste desde la lista de espera! 🎉",
+            body=body,
+            link=f"/events/{event_id}",
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("waitlist promote notify failed")
     return reg
 
 

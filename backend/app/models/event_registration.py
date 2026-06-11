@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import AttendanceStatus, Base, PaymentStatus, TimestampMixin
@@ -49,3 +49,18 @@ class EventRegistration(Base, TimestampMixin):
     dropped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Check-in
+    checked_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checkin_method: Mapped[str | None] = mapped_column(String(20))  # qr | manual | self
+    checkin_token: Mapped[str | None] = mapped_column(String(40))
+
+    # Trazabilidad de pago MercadoPago
+    mp_preference_id: Mapped[str | None] = mapped_column(String(80))
+    mp_payment_id: Mapped[str | None] = mapped_column(String(80))
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Cupo reservado hasta esta fecha si el evento es pago. NULL = sin expiración
+    # (evento gratis o ya pagado). Scheduler libera los vencidos.
+    payment_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    # Recordatorio "te quedan 2h para pagar" — enviado 1 sola vez
+    payment_reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -127,6 +127,197 @@ def job_refresh_fx() -> None:
     fx.refresh()
 
 
+def job_refresh_tcg_news() -> None:
+    """Trae noticias TCG nuevas desde Reddit + RSS oficiales."""
+    from app.services import tcg_news as news_svc
+    try:
+        news_svc.refresh_all()
+    except Exception:
+        logger.exception("job_refresh_tcg_news failed")
+
+
+def job_apply_rating_decay() -> None:
+    """Aplica ranked decay 1x/día a jugadores inactivos sin freeze."""
+    from app.core.db import SessionLocal
+    from app.services import competitive as cs
+    db = SessionLocal()
+    try:
+        cs.apply_decay_to_all(db)
+    except Exception:
+        logger.exception("job_apply_rating_decay failed")
+    finally:
+        db.close()
+
+
+def job_sparring_matchmaker() -> None:
+    """Empareja cola de sparring cada 30s."""
+    from app.core.db import SessionLocal
+    from app.services import competitive as cs
+    db = SessionLocal()
+    try:
+        cs.run_sparring_matchmaker(db)
+    except Exception:
+        logger.exception("job_sparring_matchmaker failed")
+    finally:
+        db.close()
+
+
+def job_cleanup_duels() -> None:
+    """Cleanup duels: PENDING expirados + ACCEPTED sin reportar 24h+."""
+    from app.core.db import SessionLocal
+    from app.services import competitive as cs
+    db = SessionLocal()
+    try:
+        cs.cleanup_pending_duels(db)
+    except Exception:
+        logger.exception("job_cleanup_duels failed")
+    finally:
+        db.close()
+
+
+def job_cleanup_sparring_queue() -> None:
+    """Purge sparring queue: unmatched>30min, matched>2h."""
+    from app.core.db import SessionLocal
+    from app.services import competitive as cs
+    db = SessionLocal()
+    try:
+        cs.cleanup_sparring_queue(db)
+    except Exception:
+        logger.exception("job_cleanup_sparring_queue failed")
+    finally:
+        db.close()
+
+
+def job_expire_unpaid_registrations() -> None:
+    """Libera cupos de inscripciones impagas vencidas (payment_expires_at < now).
+
+    Solo toca regs PENDING de eventos OPEN cuyo plazo de pago venció.
+    Notifica al jugador antes de borrar la inscripción.
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from app.core.db import SessionLocal
+    from app.models import Event, EventRegistration, EventStatus
+    from app.models.base import PaymentStatus
+    from app.services import notifications as notif_svc
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        expired = list(db.scalars(select(EventRegistration).where(
+            EventRegistration.payment_status == PaymentStatus.PENDING,
+            EventRegistration.payment_expires_at.is_not(None),
+            EventRegistration.payment_expires_at < now,
+        )))
+        released = 0
+        affected_events: set[int] = set()
+        for reg in expired:
+            ev = db.get(Event, reg.event_id)
+            # Solo liberar si el evento sigue en inscripciones (no tocar torneos en curso)
+            if not ev or ev.status not in (EventStatus.DRAFT, EventStatus.OPEN):
+                reg.payment_expires_at = None  # dejar de evaluarla
+                continue
+            try:
+                notif_svc.notify(
+                    db, player_id=reg.player_id,
+                    type="event_reg_expired",
+                    title="Cupo liberado por falta de pago",
+                    body=f"Tu inscripción a {ev.name} expiró sin pago. Podés volver a inscribirte si quedan cupos.",
+                    link=f"/events/{ev.id}",
+                )
+            except Exception:
+                logger.exception("notify expired reg failed")
+            db.delete(reg)
+            affected_events.add(ev.id)
+            released += 1
+        db.flush()
+        # Cupos liberados → promover desde la waitlist (uno por cupo libre)
+        from app.services import event as event_svc
+        for eid in affected_events:
+            try:
+                while event_svc.promote_from_waitlist(db, event_id=eid):
+                    pass
+            except Exception:
+                logger.exception("waitlist promote failed for event %s", eid)
+        db.commit()
+        if released:
+            logger.info("expired unpaid registrations released=%d", released)
+
+        # Recordatorio único: PENDING que expira en <2h y no fue avisado
+        from datetime import timedelta
+        soon = now + timedelta(hours=2)
+        reminders = list(db.scalars(select(EventRegistration).where(
+            EventRegistration.payment_status == PaymentStatus.PENDING,
+            EventRegistration.payment_expires_at.is_not(None),
+            EventRegistration.payment_expires_at > now,
+            EventRegistration.payment_expires_at < soon,
+            EventRegistration.payment_reminder_sent.is_(False),
+        )))
+        for reg in reminders:
+            ev = db.get(Event, reg.event_id)
+            if not ev:
+                continue
+            try:
+                notif_svc.notify(
+                    db, player_id=reg.player_id,
+                    type="payment_reminder",
+                    title="⏰ Tu cupo expira pronto",
+                    body=f"Te quedan menos de 2 horas para pagar tu inscripción a {ev.name}.",
+                    link=f"/events/{ev.id}",
+                )
+                reg.payment_reminder_sent = True
+            except Exception:
+                logger.exception("payment reminder failed")
+        db.commit()
+        if reminders:
+            logger.info("payment reminders sent=%d", len(reminders))
+    except Exception:
+        logger.exception("job_expire_unpaid_registrations failed")
+    finally:
+        db.close()
+
+
+def job_weekly_summaries() -> None:
+    """Lunes: 'Tu Semana Elite' para jugadores activos."""
+    from app.core.db import SessionLocal
+    from app.services import growth as growth_svc
+    db = SessionLocal()
+    try:
+        growth_svc.send_weekly_summaries(db)
+        db.commit()
+    except Exception:
+        logger.exception("job_weekly_summaries failed")
+    finally:
+        db.close()
+
+
+def job_rivalry_reminders() -> None:
+    """Diario: 'mañana juega tu rival/némesis' a inscritos."""
+    from app.core.db import SessionLocal
+    from app.services import growth as growth_svc
+    db = SessionLocal()
+    try:
+        growth_svc.send_rivalry_event_reminders(db)
+        db.commit()
+    except Exception:
+        logger.exception("job_rivalry_reminders failed")
+    finally:
+        db.close()
+
+
+def job_resolve_guild_wars() -> None:
+    """Auto-resolve guild wars vencidas + paga EXP a winners."""
+    from app.core.db import SessionLocal
+    from app.services import competitive as cs
+    db = SessionLocal()
+    try:
+        cs.resolve_expired_wars(db)
+    except Exception:
+        logger.exception("job_resolve_guild_wars failed")
+    finally:
+        db.close()
+
+
 def job_fire_tornado() -> None:
     """Dispara el Tornado of Fate diario para cada Gremio activo."""
     from sqlalchemy import select
@@ -190,6 +381,51 @@ def start() -> None:
     _scheduler.add_job(
         job_fire_tornado, CronTrigger(hour=12, minute=0),
         id="fire_tornado", replace_existing=True,
+    )
+    # Noticias TCG cada hora
+    _scheduler.add_job(
+        job_refresh_tcg_news, IntervalTrigger(hours=1),
+        id="refresh_tcg_news", replace_existing=True,
+    )
+    # Rating decay diario 05:00 UTC
+    _scheduler.add_job(
+        job_apply_rating_decay, CronTrigger(hour=5, minute=0),
+        id="rating_decay", replace_existing=True,
+    )
+    # Sparring matchmaker cada 30s
+    _scheduler.add_job(
+        job_sparring_matchmaker, IntervalTrigger(seconds=30),
+        id="sparring_matcher", replace_existing=True,
+    )
+    # Duel cleanup cada hora
+    _scheduler.add_job(
+        job_cleanup_duels, IntervalTrigger(hours=1),
+        id="cleanup_duels", replace_existing=True,
+    )
+    # Sparring queue cleanup cada 5min
+    _scheduler.add_job(
+        job_cleanup_sparring_queue, IntervalTrigger(minutes=5),
+        id="cleanup_sparring", replace_existing=True,
+    )
+    # Guild wars auto-resolve cada hora
+    _scheduler.add_job(
+        job_resolve_guild_wars, IntervalTrigger(hours=1),
+        id="resolve_guild_wars", replace_existing=True,
+    )
+    # Liberar cupos impagos vencidos cada 10 min
+    _scheduler.add_job(
+        job_expire_unpaid_registrations, IntervalTrigger(minutes=10),
+        id="expire_unpaid_regs", replace_existing=True,
+    )
+    # Tu Semana Elite — lunes 12:00 UTC (≈ 9 AM Chile)
+    _scheduler.add_job(
+        job_weekly_summaries, CronTrigger(day_of_week="mon", hour=12, minute=0),
+        id="weekly_summaries", replace_existing=True,
+    )
+    # Recordatorio rival/némesis — diario 22:00 UTC (tarde Chile, evento es mañana)
+    _scheduler.add_job(
+        job_rivalry_reminders, CronTrigger(hour=22, minute=0),
+        id="rivalry_reminders", replace_existing=True,
     )
     _scheduler.start()
     logger.info("scheduler started with %d jobs", len(_scheduler.get_jobs()))

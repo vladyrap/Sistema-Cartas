@@ -69,7 +69,7 @@ def get_today(db: DbDep) -> CardOut:
 
     # Generar carta nueva
     prompt = f"Today is {today.isoformat()}. Invent today's card."
-    data = ai_chat.complete_json(prompt, system=CARD_GEN_SYSTEM, max_tokens=600)
+    data = ai_chat.complete_json(prompt, system=CARD_GEN_SYSTEM, max_tokens=600, creative=True)
 
     # Si la IA falla y devuelve {"raw": ..., "error": ...}, usar fallback
     if data.get("error") == "parse":

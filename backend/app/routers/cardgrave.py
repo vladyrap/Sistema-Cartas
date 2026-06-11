@@ -78,7 +78,7 @@ class SeedResult(BaseModel):
 
 def _generate_epitaph(card_name: str, rationale: str | None) -> str:
     prompt = f"Card: {card_name}\nBan rationale: {rationale or '(none documented)'}\n\nWrite the epitaph."
-    text = ai_chat.complete(prompt, system=EPITAPH_SYSTEM, max_tokens=180).strip()
+    text = ai_chat.complete(prompt, system=EPITAPH_SYSTEM, max_tokens=180, creative=True).strip()
     return text[:280] if text else f"{card_name}: roto. Demasiado libre para este meta."
 
 

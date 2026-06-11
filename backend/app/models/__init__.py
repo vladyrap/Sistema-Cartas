@@ -71,6 +71,31 @@ from app.models.archetype_devotion import ArchetypeDevotion
 from app.models.quantum_deck import QuantumDeck
 from app.models.quest import QuestArc, QuestStep, PlayerQuestProgress
 from app.models.brain_poll import BrainPoll, BrainVote
+from app.models.tcg_news import TcgNews
+from app.models.coming_soon import ComingSoonPage
+from app.models.tournament_universe import (
+    TournamentPrediction, PlayerRivalry, TournamentHypeEvent,
+    TournamentHypeReaction, TournamentAchievement, TournamentStoryline,
+)
+from app.models.competitive import (
+    ChallengeDuel, SparringQueueEntry, GuildWar, GuildWarMatch,
+    TeamDraft, TeamDraftPick, EventSpecialMode, BountyBracketState,
+    Sponsor, SponsorAmbassador,
+)
+from app.models.battle_pass import (
+    BattlePass, BattlePassTier, BattlePassProgress,
+)
+from app.models.event_waitlist import EventWaitlist
+from app.models.growth import (
+    StoreCredit, Membership, SeasonNemesis,
+    PhysicalReward, PhysicalRewardClaim, TradeRecord,
+)
+from app.models.meta_competitive import (
+    TournamentAuction, TournamentAuctionBid,
+    MercenaryOffer, MercenaryHire,
+    CoachOffer, CoachBooking,
+    SpectatorPick,
+)
 from app.models.tournament_extras import (
     MatchReport, MatchDispute, RoundTimer,
     EventRatingSnapshot, EventPenalty,
@@ -164,4 +189,24 @@ __all__ = [
     "RoundTimer",
     "EventRatingSnapshot",
     "EventPenalty",
+    "TcgNews",
+    "ComingSoonPage",
+    "TournamentPrediction",
+    "PlayerRivalry",
+    "TournamentHypeEvent",
+    "TournamentHypeReaction",
+    "TournamentAchievement",
+    "TournamentStoryline",
+    "ChallengeDuel", "SparringQueueEntry",
+    "GuildWar", "GuildWarMatch",
+    "TeamDraft", "TeamDraftPick",
+    "EventSpecialMode", "BountyBracketState",
+    "Sponsor", "SponsorAmbassador",
+    "BattlePass", "BattlePassTier", "BattlePassProgress",
+    "TournamentAuction", "TournamentAuctionBid",
+    "MercenaryOffer", "MercenaryHire",
+    "CoachOffer", "CoachBooking", "SpectatorPick",
+    "EventWaitlist",
+    "StoreCredit", "Membership", "SeasonNemesis",
+    "PhysicalReward", "PhysicalRewardClaim", "TradeRecord",
 ]

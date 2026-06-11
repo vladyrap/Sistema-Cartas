@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -15,7 +15,8 @@ from app.services import tournament as tour_svc
 router = APIRouter()
 
 
-def _to_out(ev: Event, registered_count: int, is_registered: bool = False) -> EventOut:
+def _to_out(ev: Event, registered_count: int, is_registered: bool = False,
+            my_reg: EventRegistration | None = None) -> EventOut:
     return EventOut(
         id=ev.id,
         name=ev.name,
@@ -28,7 +29,12 @@ def _to_out(ev: Event, registered_count: int, is_registered: bool = False) -> Ev
         registered_count=registered_count,
         price_clp=int(ev.price_clp),
         description=ev.description,
+        rules=ev.rules,
+        prizes=ev.prizes,
         is_registered=is_registered,
+        my_registration_id=my_reg.id if my_reg else None,
+        my_payment_status=my_reg.payment_status.value if my_reg else None,
+        my_payment_expires_at=my_reg.payment_expires_at if my_reg else None,
     )
 
 
@@ -81,15 +87,15 @@ def get_event_with_me(event_id: int, db: DbDep, current: UserDep, guild: GuildCo
     count = db.scalar(
         select(func.count(EventRegistration.id)).where(EventRegistration.event_id == event_id)
     ) or 0
-    is_reg = False
+    my_reg = None
     if current.profile:
-        is_reg = db.scalar(
+        my_reg = db.scalar(
             select(EventRegistration).where(
                 EventRegistration.event_id == event_id,
                 EventRegistration.player_id == current.profile.id,
             )
-        ) is not None
-    return _to_out(ev, count, is_reg)
+        )
+    return _to_out(ev, count, my_reg is not None, my_reg=my_reg)
 
 
 class RegisterRequest(BaseModel):
@@ -137,6 +143,277 @@ def cancel_my_registration(registration_id: int, db: DbDep, current: UserDep):
     event_svc.cancel_registration(db, registration_id=registration_id, by_player_id=current.profile.id)
     db.commit()
     return None
+
+
+@router.post("/registrations/{registration_id}/pay")
+def pay_registration(registration_id: int, request: Request, db: DbDep, current: UserDep) -> dict:
+    """Crea una preference de MercadoPago para pagar la inscripción a un evento.
+
+    external_reference = "evt:{registration_id}" — el webhook de payments la
+    reconoce y marca payment_status=PAID al confirmar el pago approved.
+    """
+    if not current.profile:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sin perfil de jugador")
+    reg = db.get(EventRegistration, registration_id)
+    if not reg or reg.player_id != current.profile.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Inscripción no encontrada")
+    from app.models.base import PaymentStatus
+    if reg.payment_status == PaymentStatus.PAID:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Inscripción ya pagada")
+
+    ev = db.get(Event, reg.event_id)
+    if not ev:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
+    if int(ev.price_clp) <= 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este evento es gratuito")
+
+    from app.models import Guild
+    guild = db.get(Guild, ev.guild_id)
+    from app.services import mercadopago as mp_svc
+    from app.core.config import settings as _settings
+
+    # Beneficio membresía: descuento % en la entrada
+    unit_price = int(ev.price_clp)
+    from app.services import growth as growth_svc
+    is_member = growth_svc.is_member(db, current.profile.id)
+    if is_member and _settings.membership_event_discount_pct > 0:
+        unit_price = max(1, unit_price * (100 - _settings.membership_event_discount_pct) // 100)
+
+    front_base = _settings.frontend_url.rstrip("/")
+    pref = mp_svc.create_preference(
+        access_token=(guild.mp_access_token if guild else "") or "",
+        items=[{
+            "title": f"Inscripción — {ev.name}" + (" (member)" if is_member else ""),
+            "quantity": 1,
+            "unit_price": unit_price,
+            "currency_id": "CLP",
+        }],
+        external_reference=f"evt:{reg.id}",
+        back_urls={
+            "success": f"{front_base}/events/{ev.id}?payment=success",
+            "failure": f"{front_base}/events/{ev.id}?payment=failure",
+            "pending": f"{front_base}/events/{ev.id}?payment=pending",
+        },
+        notification_url=f"{str(request.base_url).rstrip('/')}/api/payments/mercadopago/webhook",
+    )
+    reg.mp_preference_id = pref.get("id")
+    db.commit()
+    return {
+        "init_point": pref.get("init_point") or pref.get("sandbox_init_point") or "",
+        "preference_id": pref.get("id") or "",
+        "mock": pref.get("mock", False),
+        "price_clp": unit_price,
+        "member_discount_applied": is_member,
+        "payment_expires_at": reg.payment_expires_at.isoformat() if reg.payment_expires_at else None,
+    }
+
+
+@router.post("/registrations/{registration_id}/mark-paid", response_model=EventRegistrationOut)
+def admin_mark_paid(registration_id: int, db: DbDep, admin: AdminDep) -> EventRegistration:
+    """Admin marca la inscripción como pagada (efectivo en tienda / transferencia)."""
+    reg = db.get(EventRegistration, registration_id)
+    if not reg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Inscripción no encontrada")
+    from app.models.base import PaymentStatus
+    from datetime import datetime as _dt, timezone as _tz
+    if reg.payment_status == PaymentStatus.PAID:
+        return reg
+    reg.payment_status = PaymentStatus.PAID
+    reg.paid_at = _dt.now(_tz.utc)
+    reg.payment_expires_at = None
+    from app.services import audit
+    ev = db.get(Event, reg.event_id)
+    audit.log(
+        db, admin_id=admin.id, action="event_reg.mark_paid",
+        guild_id=ev.guild_id if ev else None,
+        target_kind="registration", target_id=registration_id,
+        payload={"event_id": reg.event_id, "player_id": reg.player_id, "method": "cash/manual"},
+    )
+    db.commit()
+    db.refresh(reg)
+    return reg
+
+
+@router.post("/registrations/{registration_id}/mark-refunded", response_model=EventRegistrationOut)
+def admin_mark_refunded(registration_id: int, db: DbDep, admin: AdminDep) -> EventRegistration:
+    """Admin marca la inscripción como reembolsada (el refund real en MP es manual)."""
+    reg = db.get(EventRegistration, registration_id)
+    if not reg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Inscripción no encontrada")
+    from app.models.base import PaymentStatus
+    if reg.payment_status != PaymentStatus.PAID:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Solo se reembolsan inscripciones PAID")
+    reg.payment_status = PaymentStatus.REFUNDED
+    from app.services import audit
+    from app.services import notifications as notif_svc
+    ev = db.get(Event, reg.event_id)
+    audit.log(
+        db, admin_id=admin.id, action="event_reg.mark_refunded",
+        guild_id=ev.guild_id if ev else None,
+        target_kind="registration", target_id=registration_id,
+        payload={"event_id": reg.event_id, "player_id": reg.player_id},
+    )
+    notif_svc.notify(
+        db, player_id=reg.player_id,
+        type="event_refunded",
+        title="Inscripción reembolsada",
+        body=f"Tu pago de {ev.name if ev else 'el evento'} fue marcado como reembolsado.",
+        link=f"/events/{reg.event_id}",
+    )
+    db.commit()
+    db.refresh(reg)
+    return reg
+
+
+# ============================== Waitlist ==============================
+
+
+@router.post("/{event_id}/waitlist", status_code=201)
+def join_event_waitlist(event_id: int, db: DbDep, current: UserDep) -> dict:
+    """Anotarse en la lista de espera de un evento lleno."""
+    if not current.profile:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sin perfil de jugador")
+    entry = event_svc.join_waitlist(db, event_id=event_id, player_id=current.profile.id)
+    db.commit()
+    # Posición en la cola
+    from app.models import EventWaitlist
+    position = db.scalar(
+        select(func.count(EventWaitlist.id)).where(
+            EventWaitlist.event_id == event_id,
+            EventWaitlist.promoted_at.is_(None),
+            EventWaitlist.created_at <= entry.created_at,
+        )
+    ) or 1
+    return {"ok": True, "position": int(position)}
+
+
+@router.delete("/{event_id}/waitlist", status_code=204)
+def leave_event_waitlist(event_id: int, db: DbDep, current: UserDep):
+    if not current.profile:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sin perfil de jugador")
+    event_svc.leave_waitlist(db, event_id=event_id, player_id=current.profile.id)
+    db.commit()
+
+
+@router.get("/{event_id}/waitlist")
+def waitlist_status(event_id: int, db: DbDep, current: UserDep) -> dict:
+    """Estado de la cola: total esperando + mi posición (si estoy)."""
+    from app.models import EventWaitlist
+    total = db.scalar(select(func.count(EventWaitlist.id)).where(
+        EventWaitlist.event_id == event_id,
+        EventWaitlist.promoted_at.is_(None),
+    )) or 0
+    my_position = None
+    if current.profile:
+        mine = db.scalar(select(EventWaitlist).where(
+            EventWaitlist.event_id == event_id,
+            EventWaitlist.player_id == current.profile.id,
+            EventWaitlist.promoted_at.is_(None),
+        ))
+        if mine:
+            my_position = (db.scalar(
+                select(func.count(EventWaitlist.id)).where(
+                    EventWaitlist.event_id == event_id,
+                    EventWaitlist.promoted_at.is_(None),
+                    EventWaitlist.created_at <= mine.created_at,
+                )
+            ) or 1)
+    return {"total_waiting": int(total), "my_position": my_position}
+
+
+# ============================== Caja del evento (admin) ==============================
+
+
+@router.get("/{event_id}/finance")
+def event_finance(event_id: int, db: DbDep, admin: AdminDep) -> dict:
+    """Resumen financiero del evento: recaudado / pendiente / reembolsado +
+    detalle por inscripción para conciliar contra el panel de MercadoPago."""
+    ev = db.get(Event, event_id)
+    if not ev:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
+    from app.models.base import PaymentStatus as PS
+    regs = list(db.scalars(select(EventRegistration).where(
+        EventRegistration.event_id == event_id
+    )))
+    price = int(ev.price_clp)
+    by_status = {"PAID": 0, "PENDING": 0, "REFUNDED": 0, "CANCELLED": 0}
+    detail = []
+    for r in regs:
+        st = r.payment_status.value
+        by_status[st] = by_status.get(st, 0) + 1
+        p = db.get(PlayerProfile, r.player_id)
+        detail.append({
+            "registration_id": r.id,
+            "alias": p.alias if p else f"#{r.player_id}",
+            "payment_status": st,
+            "paid_at": r.paid_at.isoformat() if r.paid_at else None,
+            "mp_payment_id": r.mp_payment_id,
+            "method": "mercadopago" if r.mp_payment_id else ("manual" if r.paid_at else None),
+            "expires_at": r.payment_expires_at.isoformat() if r.payment_expires_at else None,
+        })
+    # Waitlist con aliases (para que el admin vea la cola completa)
+    from app.models import EventWaitlist
+    wl_entries = list(db.scalars(
+        select(EventWaitlist).where(
+            EventWaitlist.event_id == event_id,
+            EventWaitlist.promoted_at.is_(None),
+        ).order_by(EventWaitlist.created_at)
+    ))
+    waitlist = []
+    for i, w in enumerate(wl_entries, start=1):
+        p = db.get(PlayerProfile, w.player_id)
+        waitlist.append({
+            "position": i,
+            "player_id": w.player_id,
+            "alias": p.alias if p else f"#{w.player_id}",
+            "since": w.created_at.isoformat(),
+        })
+
+    return {
+        "event_id": event_id,
+        "event_name": ev.name,
+        "price_clp": price,
+        "slots": ev.slots,
+        "registrations": len(regs),
+        "counts": by_status,
+        "collected_clp": by_status.get("PAID", 0) * price,
+        "pending_clp": by_status.get("PENDING", 0) * price,
+        "refunded_clp": by_status.get("REFUNDED", 0) * price,
+        "detail": detail,
+        "waitlist": waitlist,
+    }
+
+
+@router.post("/{event_id}/refund-all")
+def admin_refund_all(event_id: int, db: DbDep, admin: AdminDep) -> dict:
+    """Marca REFUNDED todas las inscripciones PAID del evento (típico: evento cancelado).
+    El refund real en MercadoPago lo hace el admin desde el panel MP."""
+    ev = db.get(Event, event_id)
+    if not ev:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Evento no encontrado")
+    from app.models.base import PaymentStatus
+    from app.services import audit
+    from app.services import notifications as notif_svc
+    regs = list(db.scalars(select(EventRegistration).where(
+        EventRegistration.event_id == event_id,
+        EventRegistration.payment_status == PaymentStatus.PAID,
+    )))
+    for reg in regs:
+        reg.payment_status = PaymentStatus.REFUNDED
+        notif_svc.notify(
+            db, player_id=reg.player_id,
+            type="event_refunded",
+            title="Inscripción reembolsada",
+            body=f"El evento {ev.name} marcó tu pago como reembolsado.",
+            link=f"/events/{event_id}",
+        )
+    audit.log(
+        db, admin_id=admin.id, action="event.refund_all",
+        guild_id=ev.guild_id, target_kind="event", target_id=event_id,
+        payload={"count": len(regs)},
+    )
+    db.commit()
+    return {"ok": True, "refunded_count": len(regs)}
 
 
 # ============================== Torneo: standings, pairings, drop ==============================
@@ -283,6 +560,9 @@ def start_next_round(event_id: int, db: DbDep, admin: AdminDep) -> list[PairingO
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No hay jugadores activos para emparejar")
     matches = tour_svc.persist_pairings(db, event_id=event_id, pairings=proposals)
     db.commit()
+    if matches:
+        from app.services import realtime as _rt
+        _rt.emit_round_started(event_id, matches[0].round_number, len(matches))
     return [_match_to_pairing(db, m) for m in matches]
 
 
