@@ -7,6 +7,7 @@ import {
   Gift, ScanLine, Skull, Film, Wand2,
   Heart, Package, Puzzle, TrendingUp, Flame, ShoppingCart,
   Wind, Dices, Coins,
+  GitBranch, Mic, Drama,
 } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
 import { useGuild } from '../lib/useGuild';
@@ -192,7 +193,16 @@ function MoreMenu() {
         { to: '/tinder', icon: Heart, label: 'Cards Tinder' },
         { to: '/deck-roulette', icon: Dices, label: 'Deck Roulette' },
         { to: '/smack-talk', icon: Flame, label: 'Smack Talk' },
+        { to: '/card-drama', icon: Drama, label: 'Card Drama' },
         { to: '/cardgrave', icon: Skull, label: 'Cardgrave' },
+      ],
+    },
+    {
+      label: 'Lab',
+      items: [
+        { to: '/devotion', icon: Flame, label: 'Devotion Altars' },
+        { to: '/sealed', icon: Package, label: 'Sealed Generator' },
+        { to: '/voice-report', icon: Mic, label: 'Voice Reporter' },
       ],
     },
     {

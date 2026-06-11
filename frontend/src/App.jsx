@@ -83,6 +83,11 @@ const TimelapseReplay = lazy(() => import('./pages/TimelapseReplay'));
 const TornadoFate = lazy(() => import('./pages/TornadoFate'));
 const BountyContracts = lazy(() => import('./pages/BountyContracts'));
 const DeckRoulette = lazy(() => import('./pages/DeckRoulette'));
+const DeckDNA = lazy(() => import('./pages/DeckDNA'));
+const CardDrama = lazy(() => import('./pages/CardDrama'));
+const Devotion = lazy(() => import('./pages/Devotion'));
+const Sealed = lazy(() => import('./pages/Sealed'));
+const VoiceReport = lazy(() => import('./pages/VoiceReport'));
 
 function RouteFallback() {
   return (
@@ -181,6 +186,11 @@ export default function App() {
         <Route path="/tornado" element={<TornadoFate />} />
         <Route path="/bounty-contracts" element={<BountyContracts />} />
         <Route path="/deck-roulette" element={<DeckRoulette />} />
+        <Route path="/decks/:id/dna" element={<DeckDNA />} />
+        <Route path="/card-drama" element={<CardDrama />} />
+        <Route path="/devotion" element={<Devotion />} />
+        <Route path="/sealed" element={<Sealed />} />
+        <Route path="/voice-report" element={<VoiceReport />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

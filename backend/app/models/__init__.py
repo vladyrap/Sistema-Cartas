@@ -67,6 +67,7 @@ from app.models.cardgrave import CardgraveEntry
 from app.models.tornado_event import TornadoEvent
 from app.models.bounty_contract import BountyContract
 from app.models.deck_roulette import DeckRouletteAssignment
+from app.models.archetype_devotion import ArchetypeDevotion
 
 __all__ = [
     "Base",
@@ -144,4 +145,5 @@ __all__ = [
     "TornadoEvent",
     "BountyContract",
     "DeckRouletteAssignment",
+    "ArchetypeDevotion",
 ]

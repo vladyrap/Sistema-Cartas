@@ -35,13 +35,14 @@ if settings.sentry_dsn:
     logging.getLogger(__name__).info("Sentry inicializado (env=%s)", settings.env)
 from app.routers import (
     activity, admin, admin_crud, ai, announcements, auth, bounty,
-    bounty_contracts, card_of_day, cardgrave, catalog, ceiling, checkin,
-    cosmos, deck_roulette, decks, discord as discord_router, events,
-    gamification, guilds, integrations, notifications, pack_opening, payments,
-    players, polls, rankings, ratings, realtime, referrals, reservations,
-    scanner, search as search_router, seasons, smack_talk, spinner, streaks,
-    tcg as tcg_router, timelapse, tinder, tornado, uploads, wishlist, wordle,
-    wrapped,
+    bounty_contracts, card_drama, card_of_day, cardgrave, catalog, ceiling,
+    checkin, cosmos, deck_dna, deck_roulette, decks, devotion,
+    discord as discord_router, events, gamification, guilds, integrations,
+    notifications, pack_opening, payments, players, polls, rankings, ratings,
+    realtime, referrals, reservations, scanner, sealed,
+    search as search_router, seasons, smack_talk, spinner, streaks,
+    tcg as tcg_router, timelapse, tinder, tornado, uploads, voice, wishlist,
+    wordle, wrapped,
 )
 
 
@@ -339,6 +340,11 @@ app.include_router(timelapse.router, prefix="/api", tags=["timelapse"])
 app.include_router(tornado.router, prefix="/api/tornado", tags=["tornado"])
 app.include_router(bounty_contracts.router, prefix="/api/bounty-contracts", tags=["bounty-contracts"])
 app.include_router(deck_roulette.router, prefix="/api/deck-roulette", tags=["deck-roulette"])
+app.include_router(deck_dna.router, prefix="/api/decks", tags=["deck-dna"])
+app.include_router(card_drama.router, prefix="/api/card-drama", tags=["card-drama"])
+app.include_router(devotion.router, prefix="/api/devotion", tags=["devotion"])
+app.include_router(sealed.router, prefix="/api/sealed", tags=["sealed"])
+app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 app.include_router(gamification.router, prefix="/api", tags=["gamification"])
 app.include_router(gamification.admin_router, prefix="/api/admin/gamification", tags=["admin"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
