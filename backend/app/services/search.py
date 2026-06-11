@@ -39,15 +39,24 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
 _TRUNCATE_SQL = "DELETE FROM search_index;"
 
 
+def _is_sqlite() -> bool:
+    return engine.url.drivername.startswith("sqlite")
+
+
 def ensure_table() -> None:
-    """Crea la tabla virtual si no existe. Idempotente."""
+    """Crea la tabla virtual FTS5 si no existe. No-op fuera de SQLite —
+    en Postgres la búsqueda usa el fallback ILIKE sobre las tablas reales."""
+    if not _is_sqlite():
+        return
     with engine.begin() as conn:
         conn.execute(text(_CREATE_TABLE_SQL))
 
 
 def rebuild_index() -> int:
     """Trunca el índice FTS y lo repobla desde scratch.
-    Devuelve cantidad de docs insertados."""
+    Devuelve cantidad de docs insertados. No-op en Postgres (usa ILIKE en vivo)."""
+    if not _is_sqlite():
+        return 0
     ensure_table()
     from app.core.db import SessionLocal
     from sqlalchemy import select
@@ -137,6 +146,9 @@ def search(query: str, *, kind: str | None = None, limit: int = 20) -> list[dict
     """
     if not query or len(query.strip()) < 2:
         return []
+    if not _is_sqlite():
+        return _search_ilike(query, kind=kind, limit=limit)
+
     ensure_table()
     fts_q = _escape_fts_query(query)
     if not fts_q:
@@ -168,6 +180,44 @@ def search(query: str, *, kind: str | None = None, limit: int = 20) -> list[dict
         }
         for r in rows
     ]
+
+
+def _search_ilike(query: str, *, kind: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    """Fallback portable (Postgres) — ILIKE sobre las tablas reales. Sin
+    ranking BM25, pero suficiente para autocomplete; ordena por prefijo exacto."""
+    from app.core.db import SessionLocal
+    from sqlalchemy import or_, select
+    from app.models import Game, PlayerDeck, PlayerProfile, Product
+
+    like = f"%{query.strip()}%"
+    prefix = f"{query.strip()}%"
+    out: list[dict[str, Any]] = []
+    db = SessionLocal()
+    try:
+        sources = {
+            "player": (PlayerProfile, PlayerProfile.alias, lambda r: r.alias),
+            "deck": (PlayerDeck, PlayerDeck.name, lambda r: r.name),
+            "product": (Product, Product.name, lambda r: r.name),
+            "game": (Game, Game.name, lambda r: r.name),
+        }
+        kinds = [kind] if kind else list(sources)
+        for k in kinds:
+            model, title_col, title_fn = sources[k]
+            rows = db.scalars(
+                select(model).where(title_col.ilike(like)).limit(limit)
+            )
+            for r in rows:
+                title = title_fn(r) or ""
+                out.append({
+                    "kind": k, "ref_id": int(r.id), "title": title,
+                    "snippet": title,
+                    # rank inverso: prefijo exacto primero (0), substring después (1)
+                    "rank": 0.0 if title.lower().startswith(query.strip().lower()) else 1.0,
+                })
+    finally:
+        db.close()
+    out.sort(key=lambda d: (d["rank"], d["title"].lower()))
+    return out[:limit]
 
 
 # ============================== Sync triggers (incremental updates) ==============================

@@ -1,5 +1,6 @@
 """FastAPI app entrypoint."""
 import logging
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -56,8 +57,21 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Boot/shutdown hooks: FTS index, scheduler, etc."""
+    """Boot/shutdown hooks: schema, FTS index, scheduler, etc."""
     logger = logging.getLogger("app.lifespan")
+
+    # Schema: crea las tablas que falten (idempotente, NUNCA borra). Hace que
+    # un deploy fresco contra Postgres vacía "just work" sin correr migraciones
+    # manuales a mano. Para schema versionado, usar scripts/init_db.py.
+    if os.environ.get("AUTO_CREATE_SCHEMA", "1") == "1":
+        try:
+            from app.core.db import engine
+            from app.models import Base
+            Base.metadata.create_all(bind=engine)
+            logger.info("schema ensured (create_all)")
+        except Exception:
+            logger.exception("create_all on boot failed")
+
     # Search FTS5: instalar triggers + rebuild si es la primera vez.
     try:
         from app.services import search as search_svc
