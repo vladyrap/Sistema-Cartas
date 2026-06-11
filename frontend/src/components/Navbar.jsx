@@ -8,6 +8,7 @@ import {
   Heart, Package, Puzzle, TrendingUp, Flame, ShoppingCart,
   Wind, Dices, Coins,
   GitBranch, Mic, Drama,
+  Globe2, Atom, Scroll, Brain,
 } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
 import { useGuild } from '../lib/useGuild';
@@ -203,6 +204,9 @@ function MoreMenu() {
         { to: '/devotion', icon: Flame, label: 'Devotion Altars' },
         { to: '/sealed', icon: Package, label: 'Sealed Generator' },
         { to: '/voice-report', icon: Mic, label: 'Voice Reporter' },
+        { to: '/quantum', icon: Atom, label: 'Quantum Deck' },
+        { to: '/quests', icon: Scroll, label: 'Apprentice Quests' },
+        { to: '/constellation', icon: Globe2, label: 'Constellation Map' },
       ],
     },
     {

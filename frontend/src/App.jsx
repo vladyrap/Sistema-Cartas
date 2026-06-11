@@ -88,6 +88,11 @@ const CardDrama = lazy(() => import('./pages/CardDrama'));
 const Devotion = lazy(() => import('./pages/Devotion'));
 const Sealed = lazy(() => import('./pages/Sealed'));
 const VoiceReport = lazy(() => import('./pages/VoiceReport'));
+const ConstellationMap = lazy(() => import('./pages/ConstellationMap'));
+const Documentary = lazy(() => import('./pages/Documentary'));
+const QuantumDeckPage = lazy(() => import('./pages/QuantumDeck'));
+const Quests = lazy(() => import('./pages/Quests'));
+const BrainIO = lazy(() => import('./pages/BrainIO'));
 
 function RouteFallback() {
   return (
@@ -191,6 +196,11 @@ export default function App() {
         <Route path="/devotion" element={<Devotion />} />
         <Route path="/sealed" element={<Sealed />} />
         <Route path="/voice-report" element={<VoiceReport />} />
+        <Route path="/constellation" element={<ConstellationMap />} />
+        <Route path="/events/:id/documentary" element={<Documentary />} />
+        <Route path="/quantum" element={<QuantumDeckPage />} />
+        <Route path="/quests" element={<Quests />} />
+        <Route path="/events/:id/brain" element={<BrainIO />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

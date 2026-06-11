@@ -68,6 +68,9 @@ from app.models.tornado_event import TornadoEvent
 from app.models.bounty_contract import BountyContract
 from app.models.deck_roulette import DeckRouletteAssignment
 from app.models.archetype_devotion import ArchetypeDevotion
+from app.models.quantum_deck import QuantumDeck
+from app.models.quest import QuestArc, QuestStep, PlayerQuestProgress
+from app.models.brain_poll import BrainPoll, BrainVote
 
 __all__ = [
     "Base",
@@ -146,4 +149,10 @@ __all__ = [
     "BountyContract",
     "DeckRouletteAssignment",
     "ArchetypeDevotion",
+    "QuantumDeck",
+    "QuestArc",
+    "QuestStep",
+    "PlayerQuestProgress",
+    "BrainPoll",
+    "BrainVote",
 ]
