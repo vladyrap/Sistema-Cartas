@@ -64,18 +64,39 @@ nano .env.prod
 #   ADMIN_PASSWORD=<una pass fuerte>
 #   WEB_PORT=18080
 
-# levantar
-docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
+# construir imágenes y levantar SOLO los data stores (sin backend todavía)
+docker compose --env-file .env.prod -f docker-compose.prod.yml build
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d db redis
 
-# crear admin + datos base (idempotente, nunca borra)
-docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend python -m scripts.init_db
+# === MODO DEMO: cargar datos ricos para que la plataforma se vea VIVA ===
+# ⚠️ seed.py hace DROP & CREATE de TODAS las tablas. Solo en deploy FRESCO.
+#    NUNCA re-correr sobre una BD con datos reales que quieras conservar.
+# seed.py        → 20 jugadores, 3 temporadas, 8 eventos próximos, medallas
+# seed_massive.py → +200 jugadores, T4 con historial, 50 torneos FINALIZADOS
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend python -m scripts.seed
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend python -m scripts.seed_massive
+
+# ahora sí, levantar backend + frontend (arrancan contra la BD ya poblada)
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 
 # chequeo local antes de exponer al mundo
 curl -fsS http://127.0.0.1:18080/api/health/deep      # debe decir db: ok
 ```
 
-Si `health/deep` da `db: ok`, EliteCards está corriendo y aislado. Todavía no es
-accesible desde internet — eso lo habilita el paso 3.
+Si `health/deep` da `db: ok`, EliteCards está corriendo, aislado y **lleno de
+datos de demo**. Todavía no es accesible desde internet — eso lo habilita el
+paso 3.
+
+> **Producción real (no demo):** si algún día querés una instancia con datos
+> reales en vez de la demo, usá `python -m scripts.init_db` (idempotente, nunca
+> borra) en lugar de los dos `seed*`. Para la demo de clientes, usá los `seed*`.
+
+> **Integraciones en modo mock (default):** MercadoPago, IA, emails y Sentry
+> quedan en mock/no-op mientras no completes sus claves en `.env.prod`. Para una
+> demo es lo ideal: **nada dispara cobros reales**. Si querés mostrar la IA en
+> vivo (storylines, Content Engine), poné `AI_BACKEND=anthropic` +
+> `ANTHROPIC_API_KEY` (consume créditos por demo); si no, la IA muestra
+> contenido mock igual de presentable.
 
 ---
 
