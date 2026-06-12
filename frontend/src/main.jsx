@@ -9,7 +9,6 @@ import { LevelUpProvider } from './lib/useLevelUp';
 import { bootstrapTheme } from './lib/useTheme';
 import { registerServiceWorker } from './lib/registerSW';
 import CommandPalette from './components/CommandPalette';
-import VoiceButton from './components/VoiceButton';
 import './index.css';
 
 // Sentry — solo activa si VITE_SENTRY_DSN está seteado en build/env.
@@ -39,7 +38,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <LevelUpProvider>
           <App />
           <CommandPalette />
-          <VoiceButton />
           <Toaster
             position="top-right"
             toastOptions={{
