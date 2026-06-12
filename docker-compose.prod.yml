@@ -85,10 +85,14 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    networks: [elitecards-net]
+    # Dos redes: `elitecards-net` (interna, para hablar con el backend) y `web`
+    # (compartida SOLO con el Caddy de miespejo, que reparte por dominio). El
+    # backend/db/redis NUNCA tocan `web`: el único punto de contacto entre los
+    # dos sistemas es Caddy(miespejo) -> este frontend.
+    networks: [elitecards-net, web]
     ports:
-      # ÚNICO puerto que toca el host. Atado a loopback: NO accesible desde
-      # internet directo — solo el reverse proxy del VPS lo alcanza.
+      # OPCIONAL (debug): atado a loopback, para curl de health desde el host.
+      # NO es el camino de producción — el tráfico real entra por Caddy vía `web`.
       # Cambiá WEB_PORT en .env.prod si 18080 estuviera ocupado.
       - "127.0.0.1:${WEB_PORT:-18080}:80"
 
@@ -99,3 +103,8 @@ volumes:
 networks:
   elitecards-net:
     name: elitecards-net
+  # Red compartida con el Caddy de miespejo (creala una vez en el VPS:
+  # `docker network create web`). `external: true` = ya existe, no la maneja
+  # este compose. Solo el frontend se une a ella.
+  web:
+    external: true

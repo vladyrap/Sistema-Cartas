@@ -25,8 +25,9 @@ Verificado localmente con `docker compose config`: **un solo puerto** expuesto
 - Docker + Docker Compose v2 en el VPS (miespejo ya lo tiene si corre con Docker)
 - El dominio `elitecards.cl` con un **A record → 82.223.196.65** (apex; agregá
   también `www` si querés). Verificá con: `dig +short elitecards.cl`
-- Un reverse proxy en el host (Nginx/Caddy/Traefik) — el que ya termina HTTPS
-  para miespejo sirve; solo agregás un server block.
+- **El Caddy de miespejo** es el front-door (dueño de 80/443, corre como
+  contenedor dentro del compose de miespejo). EliteCards se integra detrás de él
+  vía una red Docker compartida `web` (ver §5). No se levanta un segundo proxy.
 
 ## 1. Chequear que el puerto esté libre (ANTES de levantar)
 
@@ -76,6 +77,9 @@ MercadoPago — el token va por gremio en la app, no acá), `RESEND_API_KEY`
 ## 3. Levantar el stack aislado
 
 ```bash
+# Red compartida con el Caddy de miespejo (idempotente — si ya existe, no pasa nada)
+docker network create web 2>/dev/null || true
+
 docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
 docker compose -f docker-compose.prod.yml logs -f backend
 # buscá en el log: "schema ensured" + "scheduler started"
@@ -95,45 +99,70 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml \
 `init_db` es idempotente y **nunca borra**: crea el gremio raíz, los games base
 y el SUPER_ADMIN desde `ADMIN_EMAIL`/`ADMIN_PASSWORD`. Seguro re-correrlo.
 
-## 5. Reverse proxy del subdominio (HTTPS)
+## 5. Integrar detrás del Caddy de miespejo (HTTPS)
 
-EliteCards escucha solo en `127.0.0.1:18080`. Tu reverse proxy del host le pasa
-el subdominio. Ejemplos:
+El Caddy de miespejo (dueño de 80/443, contenedor dentro del compose de
+miespejo) es quien reparte por dominio. EliteCards se conecta a él por la red
+`web` y le agregás un site block. **Caddy emite el certificado de elitecards.cl
+solo** (necesita el A record del §0 ya propagado) y maneja WebSocket
+transparente — no hace falta config extra.
 
-**Nginx** (`/etc/nginx/sites-available/elitecards.conf`):
+> ⚠️ Esto toca el front-door de miespejo (sistema en vivo). Validá SIEMPRE el
+> Caddyfile antes de aplicar, y usá el camino sin downtime de abajo.
 
-```nginx
-server {
-    server_name elitecards.cl;
+**Paso 1 — agregar el site block** en `miespejo/infra/caddy/Caddyfile`
+(al final, como bloque nuevo aparte del de miespejo):
 
-    location / {
-        proxy_pass http://127.0.0.1:18080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        # WebSocket del spectator live
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 3600s;
-    }
-    # listen 443 ssl + certs los agrega certbot:
-    #   sudo certbot --nginx -d elitecards.cl
+```
+elitecards.cl, www.elitecards.cl {
+    encode gzip zstd
+    reverse_proxy elitecards-frontend:80
 }
 ```
 
-**Caddy** (`Caddyfile` — HTTPS automático):
+**Paso 2 — sumar el Caddy de miespejo a la red `web`.** En
+`miespejo/docker-compose.prod.yml`, al servicio `caddy` agregале:
 
-```
-elitecards.cl {
-    reverse_proxy 127.0.0.1:18080
-}
+```yaml
+  caddy:
+    # ...lo que ya tiene...
+    networks:
+      - default      # mantiene el acceso a frontend/backend de miespejo
+      - web          # nuevo: para alcanzar elitecards-frontend
 ```
 
-> El contenedor frontend ya proxea `/api`, `/uploads` y el WebSocket
-> `/api/rt/ws` al backend por la red interna. El reverse proxy del host solo
-> necesita reenviar todo a `:18080`.
+y al final del archivo, el bloque top-level de redes:
+
+```yaml
+networks:
+  web:
+    external: true
+```
+
+**Paso 3 — aplicar SIN downtime** (recargar config + conectar la red en caliente,
+sin recrear el contenedor):
+
+```bash
+cd <dir-de-miespejo>
+# validar el Caddyfile editado ANTES de tocar nada (si falla, NO sigas):
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec caddy \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+# conectar el Caddy en vivo a la red web (sin recrear):
+docker network connect web "$(docker compose -f docker-compose.prod.yml ps -q caddy)"
+
+# recargar la config (zero-downtime, NO reinicia Caddy):
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec caddy \
+  caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+El cambio en el compose (paso 2) deja la red `web` **persistente**: la próxima
+vez que recrees miespejo, el Caddy vuelve a unirse solo. El `network connect` lo
+aplica ya mismo sin esperar a esa recreación.
+
+> Camino alternativo con blip de ~3s (más simple, recrea solo el caddy):
+> `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d caddy`
+> — hacelo en un horario de baja si lo preferís.
 
 ## 6. Verificación post-deploy
 
@@ -176,5 +205,7 @@ paso 4, creá un evento de prueba y verificá la inscripción.
 
 - `docker-compose.yml` → **dev local**. Publica 5432/6379/8000/80 para que
   puedas pegarle a la BD desde tu máquina. **NO usar en el VPS.**
-- `docker-compose.prod.yml` → **producción aislada**. Nada expuesto salvo
-  `127.0.0.1:18080`. Es el que usás en el VPS.
+- `docker-compose.prod.yml` → **producción aislada**. db/redis/backend solo en
+  la red privada `elitecards-net`. El frontend está en `elitecards-net` + `web`
+  (para que lo alcance el Caddy de miespejo) y además publica `127.0.0.1:18080`
+  solo para debug. Es el que usás en el VPS.
