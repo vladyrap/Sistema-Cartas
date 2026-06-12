@@ -23,7 +23,8 @@ Verificado localmente con `docker compose config`: **un solo puerto** expuesto
 ## 0. Prerrequisitos
 
 - Docker + Docker Compose v2 en el VPS (miespejo ya lo tiene si corre con Docker)
-- Un subdominio para EliteCards apuntando al VPS (ej. `cartas.tudominio.cl`)
+- El dominio `elitecards.cl` con un **A record → 82.223.196.65** (apex; agregá
+  también `www` si querés). Verificá con: `dig +short elitecards.cl`
 - Un reverse proxy en el host (Nginx/Caddy/Traefik) — el que ya termina HTTPS
   para miespejo sirve; solo agregás un server block.
 
@@ -62,7 +63,7 @@ openssl rand -base64 48   # JWT_SECRET
 |---|---|
 | `POSTGRES_PASSWORD` | salida de `openssl rand -base64 24` |
 | `JWT_SECRET` | salida de `openssl rand -base64 48` (32+ chars; el boot rechaza secrets débiles en prod) |
-| `ALLOWED_ORIGINS` | tu URL, ej. `https://cartas.tudominio.cl` |
+| `ALLOWED_ORIGINS` | tu URL, ej. `https://elitecards.cl` |
 | `FRONTEND_URL` | idem — se usa en emails y back_urls de MercadoPago |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | el primer super-admin que crea el bootstrap |
 | `WEB_PORT` | `18080` (o el que elegiste libre en el paso 1) |
@@ -103,7 +104,7 @@ el subdominio. Ejemplos:
 
 ```nginx
 server {
-    server_name cartas.tudominio.cl;
+    server_name elitecards.cl;
 
     location / {
         proxy_pass http://127.0.0.1:18080;
@@ -118,14 +119,14 @@ server {
         proxy_read_timeout 3600s;
     }
     # listen 443 ssl + certs los agrega certbot:
-    #   sudo certbot --nginx -d cartas.tudominio.cl
+    #   sudo certbot --nginx -d elitecards.cl
 }
 ```
 
 **Caddy** (`Caddyfile` — HTTPS automático):
 
 ```
-cartas.tudominio.cl {
+elitecards.cl {
     reverse_proxy 127.0.0.1:18080
 }
 ```
@@ -142,7 +143,7 @@ curl -fsS http://127.0.0.1:18080/api/health        # liveness
 curl -fsS http://127.0.0.1:18080/api/health/deep    # DB + Redis + scheduler + search
 
 # desde tu máquina, contra el dominio
-curl -fsS https://cartas.tudominio.cl/api/health
+curl -fsS https://elitecards.cl/api/health
 ```
 
 `/api/health/deep` debe devolver `db: ok`. En Postgres el search usa ILIKE
