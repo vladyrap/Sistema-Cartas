@@ -230,17 +230,22 @@ app.add_middleware(RequestIdMiddleware)
 # 2) Security headers
 app.add_middleware(SecurityHeadersMiddleware)
 
-# 2) En prod: forzar HTTPS + restringir Host.
+# 2) En prod: restringir Host (HTTPS lo fuerza el reverse proxy).
 if settings.is_prod:
-    app.add_middleware(HTTPSRedirectMiddleware)
-    # Trusted hosts: derivado de cors_origins, descartando esquema/puerto.
-    trusted_hosts = []
+    # El redirect HTTP->HTTPS lo hace Caddy en el borde. Activarlo TAMBIÉN a
+    # nivel app, detrás de un proxy TLS, genera un bucle infinito (uvicorn ve la
+    # request como http vía nginx). Por eso es opt-in y default OFF; solo
+    # actívalo (FORCE_HTTPS_REDIRECT=1) si exponés el backend directo sin proxy.
+    if os.environ.get("FORCE_HTTPS_REDIRECT", "0") == "1":
+        app.add_middleware(HTTPSRedirectMiddleware)
+    # Trusted hosts: loopback (healthcheck Docker + proxy interno nginx) SIEMPRE,
+    # más los dominios derivados de cors_origins (esquema/puerto descartados).
+    trusted_hosts = ["localhost", "127.0.0.1"]
     for o in settings.cors_origins:
         host = o.replace("https://", "").replace("http://", "").split(":")[0].split("/")[0]
-        if host:
+        if host and host not in trusted_hosts:
             trusted_hosts.append(host)
-    if trusted_hosts:
-        app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
 # 3) CORS (el más cerca de la app, corre justo antes del handler).
 app.add_middleware(
