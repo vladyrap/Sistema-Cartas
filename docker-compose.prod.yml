@@ -1,0 +1,101 @@
+# EliteCards — PRODUCCIÓN, aislado para correr junto a OTROS sistemas en el mismo VPS.
+#
+# Diseñado para NO chocar ni mezclarse con miespejo (u otros stacks) en el host:
+#   - db (Postgres) y redis NO publican puertos al host: viven SOLO en la red
+#     interna `elitecards-net`. No pueden colisionar con la Postgres/Redis de
+#     miespejo, ni ser alcanzados desde afuera. Más aislado y más seguro.
+#   - El backend tampoco publica puerto: el frontend (nginx) lo alcanza por la
+#     red interna y ya proxea /api y /uploads (ver frontend/nginx.conf).
+#   - Lo ÚNICO que toca el host es el frontend, atado a 127.0.0.1:${WEB_PORT}
+#     (loopback, puerto alto único). El reverse proxy del VPS (el que ya sirve
+#     miespejo en 80/443) apunta tu subdominio a ese puerto. NO peleamos por 80.
+#   - project name `elitecards` + container_name/volume/network con prefijo
+#     propio: nada comparte nombre con otro stack.
+#
+# Uso (en el VPS):
+#   cp .env.prod.example .env.prod      # y completá los secrets (NO los pongas en git)
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
+#   docker compose -f docker-compose.prod.yml logs -f backend
+#
+# Parar (conserva datos):   docker compose -f docker-compose.prod.yml down
+# Parar + BORRAR la BD:     docker compose -f docker-compose.prod.yml down -v   (cuidado)
+
+name: elitecards
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: elitecards-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: elitecards
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD en .env.prod}
+      POSTGRES_DB: elitecards
+    volumes:
+      - elitecards_pgdata:/var/lib/postgresql/data
+    networks: [elitecards-net]
+    # SIN `ports:` a propósito — la BD no se expone al host.
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "elitecards"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: elitecards-redis
+    restart: unless-stopped
+    networks: [elitecards-net]
+    # SIN `ports:` — Redis solo dentro de la red interna.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    image: elitecards-backend:prod
+    container_name: elitecards-backend
+    restart: unless-stopped
+    # Secrets y config los pone el usuario en .env.prod (NUNCA en git ni en chat).
+    env_file:
+      - .env.prod
+    # Wiring interno FIJO — sobreescribe lo que venga del env_file para que no
+    # haya forma de apuntar la app a otra BD por accidente.
+    environment:
+      DATABASE_URL: postgresql+psycopg2://elitecards:${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD en .env.prod}@db:5432/elitecards
+      REDIS_URL: redis://redis:6379/0
+      ENV: prod
+      AUTO_CREATE_SCHEMA: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [elitecards-net]
+    # SIN `ports:` — solo alcanzable por el frontend vía la red interna.
+
+  frontend:
+    build:
+      context: ./frontend
+    image: elitecards-frontend:prod
+    container_name: elitecards-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks: [elitecards-net]
+    ports:
+      # ÚNICO puerto que toca el host. Atado a loopback: NO accesible desde
+      # internet directo — solo el reverse proxy del VPS lo alcanza.
+      # Cambiá WEB_PORT en .env.prod si 18080 estuviera ocupado.
+      - "127.0.0.1:${WEB_PORT:-18080}:80"
+
+volumes:
+  elitecards_pgdata:
+    name: elitecards_pgdata
+
+networks:
+  elitecards-net:
+    name: elitecards-net
