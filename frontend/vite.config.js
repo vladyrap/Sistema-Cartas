@@ -6,9 +6,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api/rt/ws': { target: 'ws://localhost:8000', ws: true, changeOrigin: true },
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
-      '/uploads': { target: 'http://localhost:8000', changeOrigin: true },
+      // 127.0.0.1 explícito (NO 'localhost'): en Windows 'localhost' resuelve
+      // primero a ::1 (IPv6) y uvicorn --host 127.0.0.1 solo escucha IPv4 →
+      // el proxy fallaba con 500 (ECONNREFUSED) al reenviar el login.
+      '/api/rt/ws': { target: 'ws://127.0.0.1:8000', ws: true, changeOrigin: true },
+      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/uploads': { target: 'http://127.0.0.1:8000', changeOrigin: true },
     },
   },
   build: {

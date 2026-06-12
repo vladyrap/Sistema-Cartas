@@ -31,7 +31,17 @@ export default function Login() {
       await auth.login(email, password);
       navigate(returnUrl || '/dashboard');
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Credenciales inválidas';
+      let msg;
+      if (!err.response) {
+        // Sin respuesta = el backend no está corriendo o no es alcanzable.
+        msg = 'No se pudo conectar con el servidor. ¿Está corriendo el backend?';
+      } else if (err.response.status === 401 || err.response.status === 400) {
+        msg = err.response.data?.detail || 'Credenciales inválidas';
+      } else if (err.response.status === 429) {
+        msg = 'Demasiados intentos. Esperá un momento e intentá de nuevo.';
+      } else {
+        msg = err.response.data?.detail || `Error del servidor (${err.response.status})`;
+      }
       setError(msg);
       toast.error(msg);
     } finally {
