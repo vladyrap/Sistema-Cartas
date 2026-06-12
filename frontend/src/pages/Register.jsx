@@ -45,7 +45,24 @@ export default function Register() {
       toast.success('¡Elite ID activada! Bienvenido.');
       navigate('/dashboard');
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'No se pudo registrar');
+      const data = err.response?.data;
+      const detail = data?.detail;
+      let msg;
+      if (!err.response) {
+        msg = 'No se pudo conectar con el servidor. Probá de nuevo.';
+      } else if (err.response.status === 429) {
+        msg = 'Demasiados intentos. Esperá un momento e intentá de nuevo.';
+      } else if (Array.isArray(detail)) {
+        // FastAPI 422: detail es una lista de errores de validación.
+        msg = detail.map((d) => d?.msg || String(d)).join(' · ') || 'Revisá los datos del formulario.';
+      } else if (typeof detail === 'string') {
+        msg = detail; // ej "El email ya está registrado", política de contraseña, etc.
+      } else if (typeof data?.error === 'string') {
+        msg = data.error; // formato de slowapi (rate limit)
+      } else {
+        msg = `No se pudo registrar (error ${err.response.status})`;
+      }
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
